@@ -2975,6 +2975,20 @@ class ApiMethods {
 		return response.data;
 	};
 
+	getAIBridgeModels = async (options: SearchParamOptions) => {
+		const url = getURLWithSearchParams("/api/v2/aibridge/models", options);
+
+		const response = await this.axios.get<string[]>(url);
+		return response.data;
+	};
+
+	getAIBridgeClients = async (options: SearchParamOptions) => {
+		const url = getURLWithSearchParams("/api/v2/aibridge/clients", options);
+
+		const response = await this.axios.get<string[]>(url);
+		return response.data;
+	};
+
 	// Chat API methods
 	getChats = async (req?: {
 		after_id?: string;
@@ -3213,12 +3227,6 @@ class ApiMethods {
 		await this.axios.delete(
 			`${chatModelConfigsPath}/${encodeURIComponent(modelConfigId)}`,
 		);
-	};
-	getAIBridgeModels = async (options: SearchParamOptions) => {
-		const url = getURLWithSearchParams("/api/v2/aibridge/models", options);
-
-		const response = await this.axios.get<string[]>(url);
-		return response.data;
 	};
 
 	getChatCostSummary = async (
