@@ -322,12 +322,8 @@ func Run(ctx context.Context, opts RunOptions) error {
 					return streamErr
 				}
 				var processErr error
-				result, processErr = processStepStream(
-					attempt.ctx,
-					attempt.stream,
-					publishMessagePart,
-				)
-				return attempt.cleanup(processErr)
+				result, processErr = processStepStream(retryCtx, stream, publishMessagePart)
+				return processErr
 			}, func(
 				attempt int,
 				retryErr error,
