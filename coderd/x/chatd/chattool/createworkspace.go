@@ -69,7 +69,7 @@ type CreateWorkspaceOptions struct {
 	AgentConnFn        AgentConnFunc
 	WorkspaceMu        *sync.Mutex
 	Logger             slog.Logger
-	AllowedTemplateIDs []uuid.UUID
+	AllowedTemplateIDs map[uuid.UUID]bool
 }
 
 type createWorkspaceArgs struct {
@@ -110,7 +110,7 @@ func CreateWorkspace(options CreateWorkspaceOptions) fantasy.AgentTool {
 			}
 
 			if !isTemplateAllowed(options.AllowedTemplateIDs, templateID) {
-				return fantasy.NewTextErrorResponse("template not available for chat workspaces; use list_templates to find allowed templates"), nil
+				return fantasy.NewTextErrorResponse("template not found"), nil
 			}
 
 			// Serialize workspace creation to prevent parallel
