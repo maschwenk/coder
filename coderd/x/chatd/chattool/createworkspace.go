@@ -62,13 +62,14 @@ type AgentConnFunc func(
 
 // CreateWorkspaceOptions configures the create_workspace tool.
 type CreateWorkspaceOptions struct {
-	DB          database.Store
-	OwnerID     uuid.UUID
-	ChatID      uuid.UUID
-	CreateFn    CreateWorkspaceFn
-	AgentConnFn AgentConnFunc
-	WorkspaceMu *sync.Mutex
-	Logger      slog.Logger
+	DB                 database.Store
+	OwnerID            uuid.UUID
+	ChatID             uuid.UUID
+	CreateFn           CreateWorkspaceFn
+	AgentConnFn        AgentConnFunc
+	WorkspaceMu        *sync.Mutex
+	Logger             slog.Logger
+	AllowedTemplateIDs []uuid.UUID
 }
 
 type createWorkspaceArgs struct {
@@ -108,6 +109,10 @@ func CreateWorkspace(options CreateWorkspaceOptions) fantasy.AgentTool {
 				), nil
 			}
 
+			if !isTemplateAllowed(options.AllowedTemplateIDs, templateID) {
+				return fantasy.NewTextErrorResponse("template not available for chat workspaces; use list_templates to find allowed templates"), nil
+			}
+
 			// Serialize workspace creation to prevent parallel
 			// tool calls from creating duplicate workspaces.
 			if options.WorkspaceMu != nil {
@@ -128,7 +133,6 @@ func CreateWorkspace(options CreateWorkspaceOptions) fantasy.AgentTool {
 					return toolResponse(existing), nil
 				}
 			}
-
 			ownerID := options.OwnerID
 
 			// Set up dbauthz context for DB lookups.
