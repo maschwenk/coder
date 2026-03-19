@@ -86,11 +86,6 @@ const docTemplate = `{
         },
         "/aibridge/clients": {
             "get": {
-                "security": [
-                    {
-                        "CoderSessionToken": []
-                    }
-                ],
                 "produces": [
                     "application/json"
                 ],
@@ -109,7 +104,12 @@ const docTemplate = `{
                             }
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "CoderSessionToken": []
+                    }
+                ]
             }
         },
         "/aibridge/interceptions": {

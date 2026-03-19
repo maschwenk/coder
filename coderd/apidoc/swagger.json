@@ -67,11 +67,6 @@
 		},
 		"/aibridge/clients": {
 			"get": {
-				"security": [
-					{
-						"CoderSessionToken": []
-					}
-				],
 				"produces": ["application/json"],
 				"tags": ["AI Bridge"],
 				"summary": "List AI Bridge clients",
@@ -86,7 +81,12 @@
 							}
 						}
 					}
-				}
+				},
+				"security": [
+					{
+						"CoderSessionToken": []
+					}
+				]
 			}
 		},
 		"/aibridge/interceptions": {
