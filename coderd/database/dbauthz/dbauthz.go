@@ -1513,26 +1513,6 @@ func (q *querier) authorizeProvisionerJob(ctx context.Context, job database.Prov
 	return nil
 }
 
-func (q *querier) UpdateChatWorkspaceBinding(ctx context.Context, arg database.UpdateChatWorkspaceBindingParams) (database.Chat, error) {
-	chat, err := q.db.GetChatByID(ctx, arg.ID)
-	if err != nil {
-		return database.Chat{}, err
-	}
-	if err := q.authorizeContext(ctx, policy.ActionUpdate, chat); err != nil {
-		return database.Chat{}, err
-	}
-
-	// UpdateChatWorkspaceBinding is manually implemented for chat tables and may
-	// not be present on every wrapped store interface yet.
-	chatWorkspaceBindingUpdater, ok := q.db.(interface {
-		UpdateChatWorkspaceBinding(context.Context, database.UpdateChatWorkspaceBindingParams) (database.Chat, error)
-	})
-	if !ok {
-		return database.Chat{}, xerrors.New("update chat workspace binding is not implemented by wrapped store")
-	}
-	return chatWorkspaceBindingUpdater.UpdateChatWorkspaceBinding(ctx, arg)
-}
-
 func (q *querier) AcquireChats(ctx context.Context, arg database.AcquireChatsParams) ([]database.Chat, error) {
 	// AcquireChats is a system-level operation used by the chat processor.
 	// Authorization is done at the system level, not per-user.
@@ -5547,6 +5527,18 @@ func (q *querier) UpdateChatStatus(ctx context.Context, arg database.UpdateChatS
 		return database.Chat{}, err
 	}
 	return q.db.UpdateChatStatus(ctx, arg)
+}
+
+func (q *querier) UpdateChatWorkspaceBinding(ctx context.Context, arg database.UpdateChatWorkspaceBindingParams) (database.Chat, error) {
+	chat, err := q.db.GetChatByID(ctx, arg.ID)
+	if err != nil {
+		return database.Chat{}, err
+	}
+	if err := q.authorizeContext(ctx, policy.ActionUpdate, chat); err != nil {
+		return database.Chat{}, err
+	}
+
+	return q.db.UpdateChatWorkspaceBinding(ctx, arg)
 }
 
 func (q *querier) UpdateCryptoKeyDeletesAt(ctx context.Context, arg database.UpdateCryptoKeyDeletesAtParams) (database.CryptoKey, error) {
