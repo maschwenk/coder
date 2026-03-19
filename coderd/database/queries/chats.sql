@@ -176,6 +176,8 @@ LIMIT
 INSERT INTO chats (
     owner_id,
     workspace_id,
+    build_id,
+    agent_id,
     parent_chat_id,
     root_chat_id,
     last_model_config_id,
@@ -184,6 +186,8 @@ INSERT INTO chats (
 ) VALUES (
     @owner_id::uuid,
     sqlc.narg('workspace_id')::uuid,
+    sqlc.narg('build_id')::uuid,
+    sqlc.narg('agent_id')::uuid,
     sqlc.narg('parent_chat_id')::uuid,
     sqlc.narg('root_chat_id')::uuid,
     @last_model_config_id::uuid,
@@ -284,16 +288,14 @@ WHERE
 RETURNING
     *;
 
--- name: UpdateChatWorkspace :one
-UPDATE
-    chats
-SET
+-- name: UpdateChatWorkspaceBinding :one
+UPDATE chats SET
     workspace_id = sqlc.narg('workspace_id')::uuid,
+    build_id = sqlc.narg('build_id')::uuid,
+    agent_id = sqlc.narg('agent_id')::uuid,
     updated_at = NOW()
-WHERE
-    id = @id::uuid
-RETURNING
-    *;
+WHERE id = @id::uuid
+RETURNING *;
 
 -- name: AcquireChats :many
 -- Acquires up to @num_chats pending chats for processing. Uses SKIP LOCKED

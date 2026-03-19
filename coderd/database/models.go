@@ -4167,6 +4167,8 @@ type Chat struct {
 	Archived          bool           `db:"archived" json:"archived"`
 	LastError         sql.NullString `db:"last_error" json:"last_error"`
 	Mode              NullChatMode   `db:"mode" json:"mode"`
+	BuildID           uuid.NullUUID  `db:"build_id" json:"build_id"`
+	AgentID           uuid.NullUUID  `db:"agent_id" json:"agent_id"`
 }
 
 type ChatDiffStatus struct {
