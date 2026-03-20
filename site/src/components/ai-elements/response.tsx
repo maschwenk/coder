@@ -5,13 +5,28 @@ import {
 } from "@pierre/diffs/react";
 import type { ComponentPropsWithRef, ReactNode } from "react";
 import { useMemo } from "react";
-import { type Components, Streamdown, type UrlTransform } from "streamdown";
+import {
+	type Components,
+	defaultRehypePlugins,
+	Streamdown,
+	type UrlTransform,
+} from "streamdown";
 import { cn } from "utils/cn";
 
 interface ResponseProps extends Omit<ComponentPropsWithRef<"div">, "children"> {
 	children: string;
 	urlTransform?: UrlTransform;
 }
+
+// Omit rehype-raw so HTML-like syntax in LLM output is rendered as
+// escaped text instead of being parsed by the HTML5 engine. Without
+// this, JSX fragments such as <ComponentName prop={value} /> are
+// consumed by rehype-raw and then stripped by rehype-sanitize,
+// silently destroying content mid-stream.
+const chatRehypePlugins = [
+	defaultRehypePlugins.sanitize,
+	defaultRehypePlugins.harden,
+];
 
 const fileViewerCSS =
 	"pre, [data-line], [data-diffs-header] { background-color: transparent !important; }";
@@ -151,12 +166,7 @@ const createComponents = (
 				</span>
 			);
 		},
-		// Task-list items: remove the default bullet marker.
-		li: ({ className, children }: MarkdownComponentProps) => {
-			const isTask =
-				typeof className === "string" && className.includes("task-list-item");
-			return <li className={isTask ? "list-none" : undefined}>{children}</li>;
-		},
+
 		// Horizontal rule: reset browser default inset/ridge border
 		// (preflight is disabled) to a clean 1px solid line.
 		hr: () => (
@@ -175,7 +185,7 @@ const createComponents = (
 		// Inline code only — fenced blocks are handled by the pre override.
 		code: ({ children }: MarkdownComponentProps) => (
 			<code className="rounded bg-surface-quaternary/25 px-1 py-0.5 font-mono text-content-primary">
-				{children}{" "}
+				{children}
 			</code>
 		),
 		// Fenced code blocks: extract language and content from the HAST
@@ -246,6 +256,7 @@ export const Response = ({
 				controls={false}
 				components={components}
 				urlTransform={urlTransform}
+				rehypePlugins={chatRehypePlugins}
 			>
 				{children}
 			</Streamdown>
