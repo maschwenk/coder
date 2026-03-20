@@ -950,6 +950,7 @@ const TemplateAllowlistSection: FC = () => {
 					onSubmit={(event) => void handleSave(event)}
 				>
 					<MultiSelectCombobox
+						inputProps={{ "aria-label": "Select allowed templates" }}
 						options={allOptions}
 						value={currentSelection}
 						onChange={setLocalSelection}
@@ -963,7 +964,6 @@ const TemplateAllowlistSection: FC = () => {
 						hidePlaceholderWhenSelected
 						data-testid="template-allowlist-select"
 					/>
-
 					<p
 						aria-live="polite"
 						role="status"

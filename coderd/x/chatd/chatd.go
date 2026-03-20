@@ -3250,6 +3250,10 @@ func (p *Server) runChat(
 						slog.F("value", s), slog.Error(parseErr))
 				}
 			}
+			if len(ids) > 0 && len(allowedTemplateIDs) == 0 {
+				p.logger.Error(ctx, "all UUIDs in template allowlist were invalid, all templates will be allowed",
+					slog.F("count", len(ids)))
+			}
 		}
 	}
 
