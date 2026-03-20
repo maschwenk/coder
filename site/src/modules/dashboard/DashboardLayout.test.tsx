@@ -1,4 +1,9 @@
 import {
+	MockEntitlements,
+	MockNoPermissions,
+	MockPermissions,
+} from "testHelpers/entities";
+import {
 	renderWithAuth,
 	waitForLoaderToBeRemoved,
 } from "testHelpers/renderHelpers";
@@ -7,6 +12,43 @@ import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { DashboardLayout } from "./DashboardLayout";
+
+const renderDashboardLayout = async ({
+	actual,
+	limit,
+	permissions = MockPermissions,
+}: {
+	actual?: number;
+	limit?: number;
+	permissions?: typeof MockPermissions;
+}) => {
+	server.use(
+		http.get("/api/v2/entitlements", () => {
+			return HttpResponse.json({
+				...MockEntitlements,
+				has_license: true,
+				refreshed_at: new Date().toISOString(),
+				features: {
+					...MockEntitlements.features,
+					ai_governance_user_limit: {
+						entitlement: "entitled",
+						enabled: true,
+						...(actual !== undefined ? { actual } : {}),
+						...(limit !== undefined ? { limit } : {}),
+					},
+				},
+			});
+		}),
+		http.post("/api/v2/authcheck", () => {
+			return HttpResponse.json(permissions);
+		}),
+	);
+
+	renderWithAuth(<DashboardLayout />, {
+		children: [{ element: <h1>Test page</h1> }],
+	});
+	await waitForLoaderToBeRemoved();
+};
 
 test("Show the new Coder version notification", async () => {
 	server.use(
@@ -22,6 +64,89 @@ test("Show the new Coder version notification", async () => {
 		children: [{ element: <h1>Test page</h1> }],
 	});
 	await screen.findByTestId("update-check-snackbar");
+});
+
+test("shows the AI Governance over-limit banner for non-admin users", async () => {
+	await renderDashboardLayout({
+		actual: 110,
+		limit: 100,
+		permissions: MockNoPermissions,
+	});
+
+	const banner = screen.getByRole("alert");
+	expect(banner).toHaveTextContent(
+		"Your organization is using 110 / 100 AI Governance user seats (10% over the limit). Contact sales@coder.com",
+	);
+	expect(screen.getByRole("link", { name: "sales@coder.com" })).toHaveAttribute(
+		"href",
+		"mailto:sales@coder.com",
+	);
+});
+
+test("shows the AI Governance over-limit banner for admin users", async () => {
+	await renderDashboardLayout({
+		actual: 110,
+		limit: 100,
+		permissions: MockPermissions,
+	});
+
+	expect(
+		screen.getByText(
+			/110 \/ 100 AI Governance user seats \(10% over the limit\)/,
+		),
+	).toBeInTheDocument();
+});
+
+test("hides the AI Governance over-limit banner when seat usage is at the limit", async () => {
+	await renderDashboardLayout({
+		actual: 100,
+		limit: 100,
+	});
+
+	expect(
+		screen.queryByText(/AI Governance user seats/),
+	).not.toBeInTheDocument();
+});
+
+test("hides the AI Governance over-limit banner when seat usage is below the limit", async () => {
+	await renderDashboardLayout({
+		actual: 50,
+		limit: 100,
+	});
+
+	expect(
+		screen.queryByText(/AI Governance user seats/),
+	).not.toBeInTheDocument();
+});
+
+test.each([
+	{ name: "limit is 0", limit: 0 },
+	{ name: "limit is missing", limit: undefined },
+])(
+	"hides the AI Governance over-limit banner when $name",
+	async ({ limit }) => {
+		await renderDashboardLayout({
+			actual: 110,
+			limit,
+		});
+
+		expect(
+			screen.queryByText(/AI Governance user seats/),
+		).not.toBeInTheDocument();
+	},
+);
+
+test("floors the AI Governance over-limit percentage", async () => {
+	await renderDashboardLayout({
+		actual: 106,
+		limit: 101,
+	});
+
+	expect(
+		screen.getByText(
+			/106 \/ 101 AI Governance user seats \(4% over the limit\)/,
+		),
+	).toBeInTheDocument();
 });
 
 test("renders a skip link before navigation content", async () => {
