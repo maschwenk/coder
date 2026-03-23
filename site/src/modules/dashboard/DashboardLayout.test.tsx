@@ -98,6 +98,25 @@ test("hides the AI Governance seat banner for admin users (admins see warnings v
 	).not.toBeInTheDocument();
 });
 
+test("hides the AI Governance over-limit banner for users with non-config deployment settings permissions", async () => {
+	const deploymentSettingsPermissions = {
+		...MockNoPermissions,
+		viewAllLicenses: true,
+	};
+
+	await renderDashboardLayout({
+		actual: 110,
+		limit: 100,
+		permissions: deploymentSettingsPermissions,
+	});
+
+	expect(
+		screen.queryByText(
+			/Your organization is using .* AI Governance user seats/,
+		),
+	).not.toBeInTheDocument();
+});
+
 test("hides the AI Governance over-limit banner when entitlement is grace_period", async () => {
 	await renderDashboardLayout({
 		actual: 110,

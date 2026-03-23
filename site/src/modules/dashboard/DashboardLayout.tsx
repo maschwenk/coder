@@ -6,6 +6,7 @@ import { useAuthenticated } from "hooks";
 import { InfoIcon } from "lucide-react";
 import { AnnouncementBanners } from "modules/dashboard/AnnouncementBanners/AnnouncementBanners";
 import { LicenseBanner } from "modules/dashboard/LicenseBanner/LicenseBanner";
+import { canViewDeploymentSettings } from "modules/permissions";
 import { type FC, type HTMLAttributes, Suspense } from "react";
 import { Outlet } from "react-router";
 import { cn } from "utils/cn";
@@ -18,12 +19,12 @@ import { useUpdateCheck } from "./useUpdateCheck";
 export const DashboardLayout: FC = () => {
 	const { permissions } = useAuthenticated();
 	const updateCheck = useUpdateCheck(permissions.viewDeploymentConfig);
-	const canViewDeployment = Boolean(permissions.viewDeploymentConfig);
+	const showLicenseBanner = canViewDeploymentSettings(permissions);
 
 	return (
 		<>
-			{canViewDeployment && <LicenseBanner />}
-			{!canViewDeployment && <AIGovernanceSeatBanner />}
+			{showLicenseBanner && <LicenseBanner />}
+			{!showLicenseBanner && <AIGovernanceSeatBanner />}
 			<AnnouncementBanners />
 
 			<div className="flex flex-col min-h-screen justify-between">
