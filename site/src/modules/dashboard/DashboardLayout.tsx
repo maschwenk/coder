@@ -6,7 +6,6 @@ import { useAuthenticated } from "hooks";
 import { InfoIcon } from "lucide-react";
 import { AnnouncementBanners } from "modules/dashboard/AnnouncementBanners/AnnouncementBanners";
 import { LicenseBanner } from "modules/dashboard/LicenseBanner/LicenseBanner";
-import { canViewDeploymentSettings } from "modules/permissions";
 import { type FC, type HTMLAttributes, Suspense } from "react";
 import { Outlet } from "react-router";
 import { cn } from "utils/cn";
@@ -19,7 +18,9 @@ import { useUpdateCheck } from "./useUpdateCheck";
 export const DashboardLayout: FC = () => {
 	const { permissions } = useAuthenticated();
 	const updateCheck = useUpdateCheck(permissions.viewDeploymentConfig);
-	const showLicenseBanner = canViewDeploymentSettings(permissions);
+	const showLicenseBanner = Boolean(
+		permissions.viewDeploymentConfig || permissions.viewAllLicenses,
+	);
 
 	return (
 		<>
