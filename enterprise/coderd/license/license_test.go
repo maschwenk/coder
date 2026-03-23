@@ -938,6 +938,12 @@ func TestEntitlements(t *testing.T) {
 				expectedWarning: fmt.Sprintf(codersdk.LicenseAIGovernanceOverLimitWarningText, 106, 101, 4),
 			},
 			{
+				name:            "TinyOverage",
+				limit:           1000,
+				activeSeatCount: 1001,
+				expectedWarning: fmt.Sprintf(codersdk.LicenseAIGovernanceOverLimitWarningText, 1001, 1000, 1),
+			},
+			{
 				name:            "ZeroLimitGuard",
 				limit:           0,
 				activeSeatCount: 5,

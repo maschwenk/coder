@@ -19,7 +19,7 @@ export const AIGovernanceSeatBannerView: FC<AIGovernanceSeatBannerViewProps> = (
 	}
 
 	const { actual, limit } = props;
-	const overPercent = Math.floor(((actual - limit) / limit) * 100);
+	const overPercent = Math.max(1, Math.floor(((actual - limit) / limit) * 100));
 
 	return (
 		<Alert severity="warning" prominent>

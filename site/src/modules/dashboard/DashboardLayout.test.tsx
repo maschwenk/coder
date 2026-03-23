@@ -98,7 +98,7 @@ test("hides the AI Governance seat banner for admin users (admins see warnings v
 	).not.toBeInTheDocument();
 });
 
-test("hides the AI Governance over-limit banner when entitlement is grace_period", async () => {
+test("shows the AI Governance over-limit banner when entitlement is grace_period", async () => {
 	await renderDashboardLayout({
 		actual: 110,
 		entitlement: "grace_period",
@@ -106,9 +106,7 @@ test("hides the AI Governance over-limit banner when entitlement is grace_period
 		permissions: MockNoPermissions,
 	});
 
-	expect(
-		screen.queryByText(/AI Governance user seats/),
-	).not.toBeInTheDocument();
+	expect(screen.getByText(/AI Governance user seats/)).toBeInTheDocument();
 });
 
 test("hides the AI Governance over-limit banner when entitlement is not_entitled", async () => {
@@ -176,6 +174,20 @@ test("floors the AI Governance over-limit percentage", async () => {
 	expect(
 		screen.getByText(
 			/106 \/ 101 AI Governance user seats \(4% over the limit\)/,
+		),
+	).toBeInTheDocument();
+});
+
+test("clamps minimum over-limit percentage to 1%", async () => {
+	await renderDashboardLayout({
+		actual: 1001,
+		limit: 1000,
+		permissions: MockNoPermissions,
+	});
+
+	expect(
+		screen.getByText(
+			/1001 \/ 1000 AI Governance user seats \(1% over the limit\)/,
 		),
 	).toBeInTheDocument();
 });

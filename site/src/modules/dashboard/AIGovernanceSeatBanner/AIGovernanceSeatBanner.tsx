@@ -13,7 +13,7 @@ export const AIGovernanceSeatBanner: FC = () => {
 	const { actual, entitlement, limit } = feature;
 
 	if (
-		entitlement !== "entitled" ||
+		(entitlement !== "entitled" && entitlement !== "grace_period") ||
 		actual === undefined ||
 		limit === undefined ||
 		limit <= 0 ||

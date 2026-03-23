@@ -508,6 +508,9 @@ func LicensesEntitlements(
 					codersdk.LicenseAIGovernance90PercentWarningText)
 			case feature.Limit != nil && *feature.Limit > 0 && actual > *feature.Limit:
 				overPct := ((actual - *feature.Limit) * 100) / *feature.Limit
+				if overPct < 1 {
+					overPct = 1
+				}
 				entitlements.Warnings = append(entitlements.Warnings, fmt.Sprintf(
 					codersdk.LicenseAIGovernanceOverLimitWarningText,
 					actual,

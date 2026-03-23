@@ -56,6 +56,20 @@ export const FloorPercentage: Story = {
 	},
 };
 
+export const TinyOverage: Story = {
+	args: {
+		variant: "over-limit",
+		actual: 1001,
+		limit: 1000,
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await expect(canvas.getByRole("alert")).toHaveTextContent(
+			/1001 \/ 1000 AI Governance user seats \(1% over the limit\)/,
+		);
+	},
+};
+
 export const LargeNumbers: Story = {
 	args: {
 		variant: "over-limit",
