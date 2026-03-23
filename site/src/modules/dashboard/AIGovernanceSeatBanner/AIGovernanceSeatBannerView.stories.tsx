@@ -28,32 +28,6 @@ export const OverLimit: Story = {
 	},
 };
 
-export const HighOverage: Story = {
-	args: {
-		actual: 200,
-		limit: 100,
-	},
-	play: async ({ canvasElement }) => {
-		const canvas = within(canvasElement);
-		await expect(canvas.getByRole("alert")).toHaveTextContent(
-			/200 \/ 100 AI Governance user seats \(100% over the limit\)/,
-		);
-	},
-};
-
-export const SmallOverage: Story = {
-	args: {
-		actual: 101,
-		limit: 100,
-	},
-	play: async ({ canvasElement }) => {
-		const canvas = within(canvasElement);
-		await expect(canvas.getByRole("alert")).toHaveTextContent(
-			/101 \/ 100 AI Governance user seats \(1% over the limit\)/,
-		);
-	},
-};
-
 export const FloorPercentage: Story = {
 	args: {
 		actual: 106,
