@@ -23,7 +23,7 @@ export const DashboardLayout: FC = () => {
 	return (
 		<>
 			{canViewDeployment && <LicenseBanner />}
-			<AIGovernanceSeatBanner />
+			{!canViewDeployment && <AIGovernanceSeatBanner />}
 			<AnnouncementBanners />
 
 			<div className="flex flex-col min-h-screen justify-between">
