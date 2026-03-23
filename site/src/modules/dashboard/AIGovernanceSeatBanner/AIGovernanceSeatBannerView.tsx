@@ -1,15 +1,24 @@
 import Link from "@mui/material/Link";
+import { LicenseAIGovernance90PercentWarningText } from "api/typesGenerated";
 import { Alert } from "components/Alert/Alert";
 import type { FC } from "react";
 
-interface AIGovernanceSeatBannerViewProps {
-	actual: number;
-	limit: number;
-}
+type AIGovernanceSeatBannerViewProps =
+	| { variant: "over-limit"; actual: number; limit: number }
+	| { variant: "near-limit" };
 
-export const AIGovernanceSeatBannerView: FC<
-	AIGovernanceSeatBannerViewProps
-> = ({ actual, limit }) => {
+export const AIGovernanceSeatBannerView: FC<AIGovernanceSeatBannerViewProps> = (
+	props,
+) => {
+	if (props.variant === "near-limit") {
+		return (
+			<Alert severity="warning" prominent>
+				{LicenseAIGovernance90PercentWarningText}
+			</Alert>
+		);
+	}
+
+	const { actual, limit } = props;
 	const overPercent = Math.floor(((actual - limit) / limit) * 100);
 
 	return (

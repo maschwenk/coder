@@ -1,5 +1,6 @@
 import { chromatic } from "testHelpers/chromatic";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { LicenseAIGovernance90PercentWarningText } from "api/typesGenerated";
 import { expect, within } from "storybook/test";
 import { AIGovernanceSeatBannerView } from "./AIGovernanceSeatBannerView";
 
@@ -14,6 +15,7 @@ type Story = StoryObj<typeof AIGovernanceSeatBannerView>;
 
 export const OverLimit: Story = {
 	args: {
+		variant: "over-limit",
 		actual: 110,
 		limit: 100,
 	},
@@ -28,8 +30,21 @@ export const OverLimit: Story = {
 	},
 };
 
+export const NearLimit: Story = {
+	args: {
+		variant: "near-limit",
+	},
+	play: async ({ canvasElement }) => {
+		const canvas = within(canvasElement);
+		await expect(canvas.getByRole("alert")).toHaveTextContent(
+			LicenseAIGovernance90PercentWarningText,
+		);
+	},
+};
+
 export const FloorPercentage: Story = {
 	args: {
+		variant: "over-limit",
 		actual: 106,
 		limit: 101,
 	},
@@ -43,6 +58,7 @@ export const FloorPercentage: Story = {
 
 export const LargeNumbers: Story = {
 	args: {
+		variant: "over-limit",
 		actual: 1200,
 		limit: 1000,
 	},

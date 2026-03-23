@@ -16,11 +16,24 @@ export const AIGovernanceSeatBanner: FC = () => {
 		entitlement !== "entitled" ||
 		actual === undefined ||
 		limit === undefined ||
-		limit <= 0 ||
-		actual <= limit
+		limit <= 0
 	) {
 		return null;
 	}
 
-	return <AIGovernanceSeatBannerView actual={actual} limit={limit} />;
+	if (actual > limit) {
+		return (
+			<AIGovernanceSeatBannerView
+				variant="over-limit"
+				actual={actual}
+				limit={limit}
+			/>
+		);
+	}
+
+	if (actual * 100 >= limit * 90 && actual < limit) {
+		return <AIGovernanceSeatBannerView variant="near-limit" />;
+	}
+
+	return null;
 };
