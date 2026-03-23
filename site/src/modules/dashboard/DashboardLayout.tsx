@@ -18,14 +18,17 @@ import { useUpdateCheck } from "./useUpdateCheck";
 export const DashboardLayout: FC = () => {
 	const { permissions } = useAuthenticated();
 	const updateCheck = useUpdateCheck(permissions.viewDeploymentConfig);
-	const showLicenseBanner = Boolean(
-		permissions.viewDeploymentConfig || permissions.viewAllLicenses,
-	);
+	const canViewDeployment = Boolean(permissions.viewDeploymentConfig);
 
 	return (
 		<>
-			{showLicenseBanner && <LicenseBanner />}
-			{!showLicenseBanner && <AIGovernanceSeatBanner />}
+			{/* LicenseBanner shows admin-only entitlement warnings, including
+			    the 90% AI governance warning. AIGovernanceSeatBanner shows
+			    the over-limit warning to everyone else. Both are gated on
+			    viewDeploymentConfig to match the existing permission model
+			    for license diagnostics. */}
+			{canViewDeployment && <LicenseBanner />}
+			{!canViewDeployment && <AIGovernanceSeatBanner />}
 			<AnnouncementBanners />
 
 			<div className="flex flex-col min-h-screen justify-between">
