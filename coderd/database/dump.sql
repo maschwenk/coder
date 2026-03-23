@@ -1394,9 +1394,9 @@ CREATE TABLE chats (
     archived boolean DEFAULT false NOT NULL,
     last_error text,
     mode chat_mode,
+    mcp_server_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL,
     build_id uuid,
-    agent_id uuid,
-    mcp_server_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL
+    agent_id uuid
 );
 
 CREATE TABLE connection_logs (
