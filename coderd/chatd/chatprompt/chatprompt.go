@@ -794,10 +794,11 @@ func toolResultContentToPart(content fantasy.ToolResultContent) codersdk.ChatMes
 			result, _ = json.Marshal(map[string]any{"output": output.Text})
 		}
 	case fantasy.ToolResultOutputContentMedia:
-		result, _ = json.Marshal(map[string]any{
-			"data":      output.Data,
-			"mime_type": output.MediaType,
-			"text":      output.Text,
+		result, _ = json.Marshal(persistedMediaResult{
+			ResultType: resultTypeMedia,
+			Data:       output.Data,
+			MimeType:   output.MediaType,
+			Text:       output.Text,
 		})
 	default:
 		result = []byte(`{}`)
@@ -1163,6 +1164,21 @@ func toolResultPartToMessagePart(logger slog.Logger, part codersdk.ChatMessagePa
 		}
 	}
 
+	// Detect media content persisted by toolResultContentToPart.
+	// Screenshots from the computer use tool are stored as
+	// {"data":"<base64>","mime_type":"image/png","text":"..."}.
+	// Without this detection, the entire base64 payload is sent
+	// as text tokens, which quickly exceeds the context limit
+	// on follow-up messages.
+	if media, ok := extractMediaContent(part.Result); ok {
+		return fantasy.ToolResultPart{
+			ToolCallID:       toolCallID,
+			ProviderExecuted: part.ProviderExecuted,
+			Output:           media,
+			ProviderOptions:  opts,
+		}
+	}
+
 	return fantasy.ToolResultPart{
 		ToolCallID:       toolCallID,
 		ProviderExecuted: part.ProviderExecuted,
@@ -1171,6 +1187,51 @@ func toolResultPartToMessagePart(logger slog.Logger, part codersdk.ChatMessagePa
 		},
 		ProviderOptions: opts,
 	}
+}
+
+// resultTypeMedia is the discriminant value written into
+// persisted media tool results so the read path can identify
+// them without heuristic shape-matching.
+const resultTypeMedia = "media"
+
+// persistedMediaResult is the JSON shape used to store media tool
+// results (e.g. computer-use screenshots) in the database. Both
+// the write path (toolResultContentToPart) and the read path
+// (extractMediaContent) use this struct so the two sides cannot
+// drift.
+//
+// The "mime_type" key intentionally diverges from the fantasy
+// struct tag (json:"media_type"). Do not change it without
+// updating both paths.
+type persistedMediaResult struct {
+	ResultType string `json:"result_type"`
+	Data       string `json:"data"`
+	MimeType   string `json:"mime_type"`
+	Text       string `json:"text"`
+}
+
+// extractMediaContent detects a persisted media tool result and
+// reconstructs the typed content. It matches the "result_type"
+// discriminant written by toolResultContentToPart. Rows written
+// before the discriminant was added are not detected and fall
+// through to the text path. Returns false for non-object JSON
+// values (strings, numbers, arrays).
+func extractMediaContent(raw json.RawMessage) (fantasy.ToolResultOutputContentMedia, bool) {
+	if len(raw) == 0 {
+		return fantasy.ToolResultOutputContentMedia{}, false
+	}
+	var probe persistedMediaResult
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return fantasy.ToolResultOutputContentMedia{}, false
+	}
+	if probe.ResultType != resultTypeMedia || probe.Data == "" || probe.MimeType == "" {
+		return fantasy.ToolResultOutputContentMedia{}, false
+	}
+	return fantasy.ToolResultOutputContentMedia{
+		Data:      probe.Data,
+		MediaType: probe.MimeType,
+		Text:      probe.Text,
+	}, true
 }
 
 // partsToMessageParts converts SDK chat message parts into fantasy
