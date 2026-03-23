@@ -25,11 +25,13 @@ import (
 	"github.com/coder/coder/v2/coderd/chatd/chatprompt"
 	"github.com/coder/coder/v2/coderd/chatd/chatprovider"
 	"github.com/coder/coder/v2/coderd/chatd/chattool"
+	"github.com/coder/coder/v2/coderd/chatd/mcpclient"
 	"github.com/coder/coder/v2/coderd/database"
 	"github.com/coder/coder/v2/coderd/database/db2sdk"
 	"github.com/coder/coder/v2/coderd/database/dbauthz"
 	"github.com/coder/coder/v2/coderd/database/pubsub"
 	coderdpubsub "github.com/coder/coder/v2/coderd/pubsub"
+	"github.com/coder/coder/v2/coderd/util/ptr"
 	"github.com/coder/coder/v2/coderd/webpush"
 	"github.com/coder/coder/v2/coderd/workspacestats"
 	"github.com/coder/coder/v2/codersdk"
@@ -64,6 +66,14 @@ const (
 	// recovery loop runs relative to the stale threshold. A value
 	// of 5 means recovery runs at 1/5 of the stale-after duration.
 	staleRecoveryIntervalDivisor = 5
+
+	// streamDropWarnInterval controls how often WARN-level logs are
+	// emitted when stream events are dropped. Between intervals the
+	// drop is logged at DEBUG to avoid log spam. This uses a
+	// timestamp comparison rather than a quartz.Ticker because the
+	// state is per-chat — a ticker per chat would require extra
+	// goroutines and lifecycle management.
+	streamDropWarnInterval = 10 * time.Second
 
 	// DefaultMaxChatsPerAcquire is the maximum number of chats to
 	// acquire in a single processOnce call. Batching avoids
@@ -528,6 +538,19 @@ type chatStreamState struct {
 	durableMessages      []codersdk.ChatStreamEvent
 	durableEvictedBefore int64 // highest message ID evicted from durable cache
 	subscribers          map[uuid.UUID]chan codersdk.ChatStreamEvent
+	bufferDropCount      int64
+	bufferLastWarnAt     time.Time
+	subscriberDropCount  int64
+	subscriberLastWarnAt time.Time
+}
+
+// resetDropCounters zeroes the rate-limiting state for both buffer
+// and subscriber drop warnings. The caller must hold s.mu.
+func (s *chatStreamState) resetDropCounters() {
+	s.bufferDropCount = 0
+	s.bufferLastWarnAt = time.Time{}
+	s.subscriberDropCount = 0
+	s.subscriberLastWarnAt = time.Time{}
 }
 
 // MaxQueueSize is the maximum number of queued user messages per chat.
@@ -583,6 +606,7 @@ type CreateOptions struct {
 	ChatMode           database.NullChatMode
 	SystemPrompt       string
 	InitialUserContent []codersdk.ChatMessagePart
+	MCPServerIDs       []uuid.UUID
 }
 
 // SendMessageBusyBehavior controls what happens when a chat is already active.
@@ -605,6 +629,7 @@ type SendMessageOptions struct {
 	Content       []codersdk.ChatMessagePart
 	ModelConfigID *uuid.UUID
 	BusyBehavior  SendMessageBusyBehavior
+	MCPServerIDs  *[]uuid.UUID
 }
 
 // SendMessageResult contains the outcome of user message processing.
@@ -654,6 +679,12 @@ func (p *Server) CreateChat(ctx context.Context, opts CreateOptions) (database.C
 	if len(opts.InitialUserContent) == 0 {
 		return database.Chat{}, xerrors.New("initial user content is required")
 	}
+	// Ensure MCPServerIDs is non-nil so pq.Array produces '{}'
+	// instead of SQL NULL, which violates the NOT NULL column
+	// constraint.
+	if opts.MCPServerIDs == nil {
+		opts.MCPServerIDs = []uuid.UUID{}
+	}
 
 	var chat database.Chat
 	txErr := p.db.InTx(func(tx database.Store) error {
@@ -671,6 +702,7 @@ func (p *Server) CreateChat(ctx context.Context, opts CreateOptions) (database.C
 			LastModelConfigID: opts.ModelConfigID,
 			Title:             opts.Title,
 			Mode:              opts.ChatMode,
+			MCPServerIDs:      opts.MCPServerIDs,
 		})
 		if err != nil {
 			return xerrors.Errorf("insert chat: %w", err)
@@ -800,6 +832,17 @@ func (p *Server) SendMessage(
 		modelConfigID := lockedChat.LastModelConfigID
 		if opts.ModelConfigID != nil {
 			modelConfigID = *opts.ModelConfigID
+		}
+
+		// Update MCP server IDs on the chat when explicitly provided.
+		if opts.MCPServerIDs != nil {
+			lockedChat, err = tx.UpdateChatMCPServerIDs(ctx, database.UpdateChatMCPServerIDsParams{
+				ID:           opts.ChatID,
+				MCPServerIDs: *opts.MCPServerIDs,
+			})
+			if err != nil {
+				return xerrors.Errorf("update chat mcp server ids: %w", err)
+			}
 		}
 
 		existingQueued, err := tx.GetChatQueuedMessages(ctx, opts.ChatID)
@@ -1586,11 +1629,19 @@ func (p *Server) start(ctx context.Context) {
 	// to handle chats orphaned by crashed or redeployed workers.
 	p.recoverStaleChats(ctx)
 
-	acquireTicker := time.NewTicker(p.pendingChatAcquireInterval)
+	acquireTicker := p.clock.NewTicker(
+		p.pendingChatAcquireInterval,
+		"chatd",
+		"acquire",
+	)
 	defer acquireTicker.Stop()
 
 	staleRecoveryInterval := p.inFlightChatStaleAfter / staleRecoveryIntervalDivisor
-	staleTicker := time.NewTicker(staleRecoveryInterval)
+	staleTicker := p.clock.NewTicker(
+		staleRecoveryInterval,
+		"chatd",
+		"stale-recovery",
+	)
 	defer staleTicker.Stop()
 
 	for {
@@ -1676,8 +1727,17 @@ func (p *Server) publishToStream(chatID uuid.UUID, event codersdk.ChatStreamEven
 			return
 		}
 		if len(state.buffer) >= maxStreamBufferSize {
-			p.logger.Warn(context.Background(), "chat stream buffer full, dropping oldest event",
-				slog.F("chat_id", chatID), slog.F("buffer_size", len(state.buffer)))
+			state.bufferDropCount++
+			now := p.clock.Now()
+			if now.Sub(state.bufferLastWarnAt) >= streamDropWarnInterval {
+				p.logger.Warn(context.Background(), "chat stream buffer full, dropping oldest event",
+					slog.F("chat_id", chatID),
+					slog.F("buffer_size", len(state.buffer)),
+					slog.F("dropped_count", state.bufferDropCount),
+				)
+				state.bufferDropCount = 0
+				state.bufferLastWarnAt = now
+			}
 			state.buffer = state.buffer[1:]
 		}
 		state.buffer = append(state.buffer, event)
@@ -1688,19 +1748,32 @@ func (p *Server) publishToStream(chatID uuid.UUID, event codersdk.ChatStreamEven
 	}
 	state.mu.Unlock()
 
+	var subDropped int64
 	for _, ch := range subscribers {
 		select {
 		case ch <- event:
 		default:
-			p.logger.Warn(context.Background(), "dropping chat stream event",
-				slog.F("chat_id", chatID), slog.F("type", event.Type))
+			subDropped++
 		}
 	}
 
-	// Clean up the stream entry if it was created by
-	// getOrCreateStreamState but has no subscribers and is not
-	// actively buffering (e.g. publish with no watchers).
+	// Re-acquire the lock once for both subscriber-drop logging and
+	// idle cleanup. Merging these avoids an unnecessary unlock/re-lock
+	// gap between the two sections.
 	state.mu.Lock()
+	if subDropped > 0 {
+		state.subscriberDropCount += subDropped
+		now := p.clock.Now()
+		if now.Sub(state.subscriberLastWarnAt) >= streamDropWarnInterval {
+			p.logger.Warn(context.Background(), "dropping chat stream event",
+				slog.F("chat_id", chatID),
+				slog.F("type", event.Type),
+				slog.F("dropped_count", state.subscriberDropCount),
+			)
+			state.subscriberDropCount = 0
+			state.subscriberLastWarnAt = now
+		}
+	}
 	p.cleanupStreamIfIdle(chatID, state)
 	state.mu.Unlock()
 }
@@ -1829,8 +1902,9 @@ func (p *Server) Subscribe(
 	var allCancels []func()
 	allCancels = append(allCancels, localCancel)
 
-	// Subscribe to pubsub for durable events (status, messages,
-	// queue updates, errors). When pubsub is nil (e.g. in-memory
+	// Subscribe to pubsub for durable and structured control
+	// events (status, messages, queue updates, retry, errors).
+	// When pubsub is nil (e.g. in-memory
 	// single-instance) we skip this and deliver all local events.
 	//
 	// This MUST happen before the DB queries below so that any
@@ -2098,6 +2172,17 @@ func (p *Server) Subscribe(
 						}
 					}
 				}
+				if notify.Retry != nil {
+					select {
+					case <-mergedCtx.Done():
+						return
+					case mergedEvents <- codersdk.ChatStreamEvent{
+						Type:   codersdk.ChatStreamEventTypeRetry,
+						ChatID: chatID,
+						Retry:  notify.Retry,
+					}:
+					}
+				}
 				if notify.Error != "" {
 					select {
 					case <-mergedCtx.Done():
@@ -2206,7 +2291,8 @@ func (p *Server) publishStatus(chatID uuid.UUID, status database.ChatStatus, wor
 }
 
 // publishChatStreamNotify broadcasts a per-chat stream notification via
-// PostgreSQL pubsub so that all replicas can read updates from the database.
+// PostgreSQL pubsub so that all replicas can merge durable database updates
+// with transient control events.
 func (p *Server) publishChatStreamNotify(chatID uuid.UUID, notify coderdpubsub.ChatStreamNotifyMessage) {
 	if p.pubsub == nil {
 		return
@@ -2301,6 +2387,19 @@ func (p *Server) PublishDiffStatusChange(ctx context.Context, chatID uuid.UUID) 
 	sdkStatus := db2sdk.ChatDiffStatus(chatID, &dbStatus)
 	p.publishChatPubsubEvent(chat, coderdpubsub.ChatEventKindDiffStatusChange, &sdkStatus)
 	return nil
+}
+
+func (p *Server) publishRetry(chatID uuid.UUID, payload *codersdk.ChatStreamRetry) {
+	if payload == nil {
+		return
+	}
+	p.publishEvent(chatID, codersdk.ChatStreamEvent{
+		Type:  codersdk.ChatStreamEventTypeRetry,
+		Retry: payload,
+	})
+	p.publishChatStreamNotify(chatID, coderdpubsub.ChatStreamNotifyMessage{
+		Retry: payload,
+	})
 }
 
 func (p *Server) publishError(chatID uuid.UUID, message string) {
@@ -2529,11 +2628,12 @@ func (p *Server) tryAutoPromoteQueuedMessage(
 }
 
 // trackWorkspaceUsage bumps the workspace's last_used_at via the
-// usage tracker. If wsID is not yet valid, it re-reads the chat
-// from the DB to pick up late associations (e.g. create_workspace
-// linking a workspace mid-conversation). The caller should store
-// the returned value so that subsequent calls skip the DB lookup
-// once a workspace has been found.
+// usage tracker and extends the workspace's autostop deadline. If
+// wsID is not yet valid, it re-reads the chat from the DB to pick
+// up late associations (e.g. create_workspace linking a workspace
+// mid-conversation). The caller should store the returned value so
+// that subsequent calls skip the DB lookup once a workspace has
+// been found.
 func (p *Server) trackWorkspaceUsage(
 	ctx context.Context,
 	chatID uuid.UUID,
@@ -2553,6 +2653,22 @@ func (p *Server) trackWorkspaceUsage(
 	}
 	if wsID.Valid {
 		p.usageTracker.Add(wsID.UUID)
+		// Bump the workspace autostop deadline. We pass time.Time{}
+		// for nextAutostart since we don't have access to
+		// TemplateScheduleStore here. The activity bump logic
+		// defaults to the template's activity_bump duration
+		// (typically 1 hour). Chat workspaces are never prebuilds,
+		// so no prebuild guard is needed (unlike reporter.go).
+		//
+		// This fires every heartbeat (~30s) but the SQL only
+		// writes when 5% of the deadline has elapsed — most calls
+		// perform a read-only CTE lookup with no UPDATE.
+		//
+		// Scaling note: for 10,000 active chats, this could lead to
+		// approx. 333 CTE queries/second. A cheap fix for this could
+		// be to heartbeat every Nth query. Leaving as potential future
+		// low-hanging fruit if needed.
+		workspacestats.ActivityBumpWorkspace(ctx, logger.Named("activity_bump"), p.db, wsID.UUID, time.Time{})
 	}
 	return wsID
 }
@@ -2608,11 +2724,13 @@ func (p *Server) processChat(ctx context.Context, chat database.Chat) {
 	streamState := p.getOrCreateStreamState(chat.ID)
 	streamState.mu.Lock()
 	streamState.buffer = nil
+	streamState.resetDropCounters()
 	streamState.buffering = true
 	streamState.mu.Unlock()
 	defer func() {
 		streamState.mu.Lock()
 		streamState.buffer = nil
+		streamState.resetDropCounters()
 		streamState.buffering = false
 		p.cleanupStreamIfIdle(chat.ID, streamState)
 		streamState.mu.Unlock()
@@ -2846,6 +2964,13 @@ func (p *Server) runChat(
 		messages     []database.ChatMessage
 	)
 
+	// Load MCP server configs and user tokens in parallel with
+	// model resolution and message loading. These queries have
+	// no dependencies on each other and all hit different tables.
+	var (
+		mcpConfigs []database.MCPServerConfig
+		mcpTokens  []database.MCPServerUserToken
+	)
 	var g errgroup.Group
 	g.Go(func() error {
 		var err error
@@ -2868,6 +2993,39 @@ func (p *Server) runChat(
 		}
 		return nil
 	})
+	if len(chat.MCPServerIDs) > 0 {
+		g.Go(func() error {
+			var err error
+			mcpConfigs, err = p.db.GetMCPServerConfigsByIDs(
+				ctx, chat.MCPServerIDs,
+			)
+			if err != nil {
+				logger.Warn(ctx,
+					"failed to load MCP server configs",
+					slog.Error(err),
+				)
+			}
+			return nil
+		})
+		g.Go(func() error {
+			var err error
+			// If token loading fails, ConnectAll will still
+			// proceed but oauth2-authenticated servers will
+			// attempt to connect without credentials. Those
+			// connections may succeed or fail depending on
+			// the remote server's auth requirements.
+			mcpTokens, err = p.db.GetMCPServerUserTokensByUserID(
+				ctx, chat.OwnerID,
+			)
+			if err != nil {
+				logger.Warn(ctx,
+					"failed to load MCP user tokens",
+					slog.Error(err),
+				)
+			}
+			return nil
+		})
+	}
 	if err := g.Wait(); err != nil {
 		return result, err
 	}
@@ -2929,7 +3087,15 @@ func (p *Server) runChat(
 	}
 	defer workspaceCtx.close()
 
-	var instruction, resolvedUserPrompt string
+	// Connect to MCP servers in parallel with instruction
+	// resolution. ConnectAll only depends on mcpConfigs and
+	// mcpTokens which are available after g.Wait() above.
+	var (
+		instruction        string
+		resolvedUserPrompt string
+		mcpTools           []fantasy.AgentTool
+		mcpCleanup         func()
+	)
 	var g2 errgroup.Group
 	g2.Go(func() error {
 		instruction = p.resolveInstructions(
@@ -2944,7 +3110,19 @@ func (p *Server) runChat(
 		resolvedUserPrompt = p.resolveUserPrompt(ctx, chat.OwnerID)
 		return nil
 	})
+	if len(mcpConfigs) > 0 {
+		g2.Go(func() error {
+			mcpTools, mcpCleanup = mcpclient.ConnectAll(
+				ctx, logger, mcpConfigs, mcpTokens,
+			)
+			return nil
+		})
+	}
+	// All g2 goroutines return nil; error is discarded.
 	_ = g2.Wait()
+	if mcpCleanup != nil {
+		defer mcpCleanup()
+	}
 
 	if instruction != "" {
 		prompt = chatprompt.InsertSystem(prompt, instruction)
@@ -3032,19 +3210,19 @@ func (p *Server) runChat(
 		var usageForCost codersdk.ChatMessageUsage
 		if hasUsage {
 			if step.Usage.InputTokens != 0 {
-				usageForCost.InputTokens = int64Ptr(step.Usage.InputTokens)
+				usageForCost.InputTokens = ptr.Ref(step.Usage.InputTokens)
 			}
 			if step.Usage.OutputTokens != 0 {
-				usageForCost.OutputTokens = int64Ptr(step.Usage.OutputTokens)
+				usageForCost.OutputTokens = ptr.Ref(step.Usage.OutputTokens)
 			}
 			if step.Usage.ReasoningTokens != 0 {
-				usageForCost.ReasoningTokens = int64Ptr(step.Usage.ReasoningTokens)
+				usageForCost.ReasoningTokens = ptr.Ref(step.Usage.ReasoningTokens)
 			}
 			if step.Usage.CacheCreationTokens != 0 {
-				usageForCost.CacheCreationTokens = int64Ptr(step.Usage.CacheCreationTokens)
+				usageForCost.CacheCreationTokens = ptr.Ref(step.Usage.CacheCreationTokens)
 			}
 			if step.Usage.CacheReadTokens != 0 {
-				usageForCost.CacheReadTokens = int64Ptr(step.Usage.CacheReadTokens)
+				usageForCost.CacheReadTokens = ptr.Ref(step.Usage.CacheReadTokens)
 			}
 		}
 		totalCostMicros := chatcost.CalculateTotalCostMicros(usageForCost, callConfig.Cost)
@@ -3158,6 +3336,7 @@ func (p *Server) runChat(
 			if ss, ok := val.(*chatStreamState); ok {
 				ss.mu.Lock()
 				ss.buffer = nil
+				ss.resetDropCounters()
 				ss.mu.Unlock()
 			}
 		}
@@ -3226,7 +3405,6 @@ func (p *Server) runChat(
 		model = cuModel
 	}
 
-	// Here are all the tools we have for the chat.
 	tools := []fantasy.AgentTool{
 		chattool.ReadFile(chattool.ReadFileOptions{
 			GetWorkspaceConn: workspaceCtx.getWorkspaceConn,
@@ -3287,6 +3465,11 @@ func (p *Server) runChat(
 			return chat
 		})...)
 	}
+
+	// Append tools from external MCP servers. These appear
+	// after the built-in tools so the LLM sees them as
+	// additional capabilities.
+	tools = append(tools, mcpTools...)
 
 	// Build provider-native tools (e.g., web search) based on
 	// the model configuration.
@@ -3369,6 +3552,7 @@ func (p *Server) runChat(
 				if rs, ok := val.(*chatStreamState); ok {
 					rs.mu.Lock()
 					rs.buffer = nil
+					rs.resetDropCounters()
 					rs.mu.Unlock()
 				}
 			}
@@ -3377,15 +3561,11 @@ func (p *Server) runChat(
 				slog.F("delay", delay.String()),
 				slog.Error(retryErr),
 			)
-			p.publishEvent(chat.ID, codersdk.ChatStreamEvent{
-				Type:   codersdk.ChatStreamEventTypeRetry,
-				ChatID: chat.ID,
-				Retry: &codersdk.ChatStreamRetry{
-					Attempt:    attempt,
-					DelayMs:    delay.Milliseconds(),
-					Error:      retryErr.Error(),
-					RetryingAt: time.Now().Add(delay),
-				},
+			p.publishRetry(chat.ID, &codersdk.ChatStreamRetry{
+				Attempt:    attempt,
+				DelayMs:    delay.Milliseconds(),
+				Error:      retryErr.Error(),
+				RetryingAt: time.Now().Add(delay),
 			})
 		},
 
@@ -3645,10 +3825,6 @@ func (p *Server) resolveModelConfig(
 		)
 	}
 	return defaultConfig, nil
-}
-
-func int64Ptr(value int64) *int64 {
-	return &value
 }
 
 func refreshChatWorkspaceSnapshot(

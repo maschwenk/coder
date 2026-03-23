@@ -29,6 +29,7 @@ import type {
 	DeleteExternalAuthByIDResponse,
 	DynamicParametersRequest,
 	PostWorkspaceUsageRequest,
+	UsersRequest,
 } from "./typesGenerated";
 import * as TypesGen from "./typesGenerated";
 
@@ -402,6 +403,7 @@ export type DeploymentConfig = Readonly<{
 
 const chatProviderConfigsPath = "/api/experimental/chats/providers";
 const chatModelConfigsPath = "/api/experimental/chats/model-configs";
+const mcpServerConfigsPath = "/api/experimental/mcp/servers";
 
 type ChatCostDateParams = {
 	start_date?: string;
@@ -424,6 +426,7 @@ type Claims = {
 	all_features: boolean;
 	// feature_set is omitted on legacy licenses
 	feature_set?: string;
+	addons?: string[];
 	version: number;
 	features: Record<string, number>;
 	require_telemetry?: boolean;
@@ -623,6 +626,13 @@ class ApiMethods {
 			{ signal },
 		);
 
+		return response.data;
+	};
+
+	getUser = async (userIdOrName: string): Promise<TypesGen.User> => {
+		const response = await this.axios.get<TypesGen.User>(
+			`/api/v2/users/${encodeURIComponent(userIdOrName)}`,
+		);
 		return response.data;
 	};
 
@@ -2125,10 +2135,28 @@ class ApiMethods {
 	getGroup = async (
 		organization: string,
 		groupName: string,
+		req: TypesGen.GroupRequest,
+		signal?: AbortSignal,
 	): Promise<TypesGen.Group> => {
-		const response = await this.axios.get(
+		const url = getURLWithSearchParams(
 			`/api/v2/organizations/${organization}/groups/${groupName}`,
+			req,
 		);
+		const response = await this.axios.get(url, { signal });
+		return response.data;
+	};
+
+	getGroupMembers = async (
+		organization: string,
+		groupName: string,
+		filter?: UsersRequest,
+		signal?: AbortSignal,
+	): Promise<TypesGen.GroupMembersResponse> => {
+		const url = getURLWithSearchParams(
+			`/api/v2/organizations/${organization}/groups/${groupName}/members`,
+			filter,
+		);
+		const response = await this.axios.get(url.toString(), { signal });
 		return response.data;
 	};
 
@@ -3129,6 +3157,20 @@ class ApiMethods {
 		await this.axios.put("/api/experimental/chats/config/desktop-enabled", req);
 	};
 
+	getChatWorkspaceTTL =
+		async (): Promise<TypesGen.ChatWorkspaceTTLResponse> => {
+			const response = await this.axios.get<TypesGen.ChatWorkspaceTTLResponse>(
+				"/api/experimental/chats/config/workspace-ttl",
+			);
+			return response.data;
+		};
+
+	updateChatWorkspaceTTL = async (
+		req: TypesGen.UpdateChatWorkspaceTTLRequest,
+	): Promise<void> => {
+		await this.axios.put("/api/experimental/chats/config/workspace-ttl", req);
+	};
+
 	getUserChatCustomPrompt =
 		async (): Promise<TypesGen.UserChatCustomPrompt> => {
 			const response = await this.axios.get<TypesGen.UserChatCustomPrompt>(
@@ -3214,6 +3256,40 @@ class ApiMethods {
 			`${chatModelConfigsPath}/${encodeURIComponent(modelConfigId)}`,
 		);
 	};
+
+	getMCPServerConfigs = async (): Promise<TypesGen.MCPServerConfig[]> => {
+		const response =
+			await this.axios.get<TypesGen.MCPServerConfig[]>(mcpServerConfigsPath);
+		return response.data;
+	};
+
+	createMCPServerConfig = async (
+		req: TypesGen.CreateMCPServerConfigRequest,
+	): Promise<TypesGen.MCPServerConfig> => {
+		const response = await this.axios.post<TypesGen.MCPServerConfig>(
+			mcpServerConfigsPath,
+			req,
+		);
+		return response.data;
+	};
+
+	updateMCPServerConfig = async (
+		id: string,
+		req: TypesGen.UpdateMCPServerConfigRequest,
+	): Promise<TypesGen.MCPServerConfig> => {
+		const response = await this.axios.patch<TypesGen.MCPServerConfig>(
+			`${mcpServerConfigsPath}/${encodeURIComponent(id)}`,
+			req,
+		);
+		return response.data;
+	};
+
+	deleteMCPServerConfig = async (id: string): Promise<void> => {
+		await this.axios.delete(
+			`${mcpServerConfigsPath}/${encodeURIComponent(id)}`,
+		);
+	};
+
 	getAIBridgeModels = async (options: SearchParamOptions) => {
 		const url = getURLWithSearchParams("/api/v2/aibridge/models", options);
 
@@ -3262,6 +3338,14 @@ class ApiMethods {
 				await this.axios.get<TypesGen.ChatUsageLimitConfigResponse>(
 					"/api/experimental/chats/usage-limits",
 				);
+			return response.data;
+		};
+
+	getChatUsageLimitStatus =
+		async (): Promise<TypesGen.ChatUsageLimitStatus> => {
+			const response = await this.axios.get<TypesGen.ChatUsageLimitStatus>(
+				"/api/experimental/chats/usage-limits/status",
+			);
 			return response.data;
 		};
 

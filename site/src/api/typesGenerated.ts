@@ -92,6 +92,7 @@ export interface AIBridgeProxyConfig {
 	readonly domain_allowlist: string;
 	readonly upstream_proxy: string;
 	readonly upstream_proxy_ca: string;
+	readonly allowed_private_cidrs: string;
 }
 
 // From codersdk/aibridge.go
@@ -1072,6 +1073,7 @@ export interface Chat {
 	readonly created_at: string;
 	readonly updated_at: string;
 	readonly archived: boolean;
+	readonly mcp_server_ids: readonly string[];
 }
 
 // From codersdk/deployment.go
@@ -1941,6 +1943,19 @@ export interface ChatUsageLimitStatus {
 	readonly period_end?: string;
 }
 
+// From codersdk/chats.go
+/**
+ * ChatWorkspaceTTLResponse is the response for getting the chat
+ * workspace TTL setting.
+ */
+export interface ChatWorkspaceTTLResponse {
+	/**
+	 * WorkspaceTTLMillis is the workspace TTL in milliseconds.
+	 * Zero means disabled — the template's own autostop setting applies.
+	 */
+	readonly workspace_ttl_ms: number;
+}
+
 // From codersdk/client.go
 /**
  * CoderDesktopTelemetryHeader contains a JSON-encoded representation of Desktop telemetry
@@ -2078,6 +2093,7 @@ export interface ConvertLoginRequest {
 export interface CreateChatMessageRequest {
 	readonly content: readonly ChatInputPart[];
 	readonly model_config_id?: string;
+	readonly mcp_server_ids?: string[];
 }
 
 // From codersdk/chats.go
@@ -2125,6 +2141,7 @@ export interface CreateChatRequest {
 	readonly content: readonly ChatInputPart[];
 	readonly workspace_id?: string;
 	readonly model_config_id?: string;
+	readonly mcp_server_ids?: readonly string[];
 }
 
 // From codersdk/users.go
@@ -2163,6 +2180,32 @@ export interface CreateGroupRequest {
 	readonly display_name: string;
 	readonly avatar_url: string;
 	readonly quota_allowance: number;
+}
+
+// From codersdk/mcp.go
+/**
+ * CreateMCPServerConfigRequest is the request to create a new MCP server config.
+ */
+export interface CreateMCPServerConfigRequest {
+	readonly display_name: string;
+	readonly slug: string;
+	readonly description: string;
+	readonly icon_url: string;
+	readonly transport: string;
+	readonly url: string;
+	readonly auth_type: string;
+	readonly oauth2_client_id?: string;
+	readonly oauth2_client_secret?: string;
+	readonly oauth2_auth_url?: string;
+	readonly oauth2_token_url?: string;
+	readonly oauth2_scopes?: string;
+	readonly api_key_header?: string;
+	readonly api_key_value?: string;
+	readonly custom_headers?: Record<string, string>;
+	readonly tool_allow_list?: readonly string[];
+	readonly tool_deny_list?: readonly string[];
+	readonly availability: string;
+	readonly enabled: boolean;
 }
 
 // From codersdk/organizations.go
@@ -2687,6 +2730,13 @@ export interface DebugProfileOptions {
 	 */
 	readonly Profiles: readonly string[];
 }
+
+// From codersdk/chats.go
+/**
+ * DefaultChatWorkspaceTTL is the default TTL for chat workspaces.
+ * Zero means disabled — the template's own autostop setting applies.
+ */
+export const DefaultChatWorkspaceTTL = 0;
 
 // From codersdk/externalauth.go
 export interface DeleteExternalAuthByIDResponse {
@@ -3304,6 +3354,17 @@ export interface GroupArguments {
 }
 
 // From codersdk/groups.go
+export interface GroupMembersResponse {
+	readonly users: readonly ReducedUser[];
+	readonly count: number;
+}
+
+// From codersdk/groups.go
+export interface GroupRequest {
+	readonly exclude_members: boolean;
+}
+
+// From codersdk/groups.go
 export type GroupSource = "oidc" | "user";
 
 export const GroupSources: GroupSource[] = ["oidc", "user"];
@@ -3692,6 +3753,51 @@ export interface LoginWithPasswordRequest {
  */
 export interface LoginWithPasswordResponse {
 	readonly session_token: string;
+}
+
+// From codersdk/mcp.go
+/**
+ * MCPServerConfig represents an admin-configured MCP server.
+ */
+export interface MCPServerConfig {
+	readonly id: string;
+	readonly display_name: string;
+	readonly slug: string;
+	readonly description: string;
+	readonly icon_url: string;
+	readonly transport: string; // "streamable_http" or "sse"
+	readonly url: string;
+	readonly auth_type: string; // "none", "oauth2", "api_key", "custom_headers"
+	/**
+	 * OAuth2 fields (only populated for admins).
+	 */
+	readonly oauth2_client_id?: string;
+	readonly has_oauth2_secret: boolean;
+	readonly oauth2_auth_url?: string;
+	readonly oauth2_token_url?: string;
+	readonly oauth2_scopes?: string;
+	/**
+	 * API key fields (only populated for admins).
+	 */
+	readonly api_key_header?: string;
+	readonly has_api_key: boolean;
+	readonly has_custom_headers: boolean;
+	/**
+	 * Tool governance.
+	 */
+	readonly tool_allow_list: readonly string[];
+	readonly tool_deny_list: readonly string[];
+	/**
+	 * Availability policy set by admin.
+	 */
+	readonly availability: string; // "force_on", "default_on", "default_off"
+	readonly enabled: boolean;
+	readonly created_at: string;
+	readonly updated_at: string;
+	/**
+	 * Per-user state (populated for non-admin requests).
+	 */
+	readonly auth_connected: boolean;
 }
 
 // From codersdk/provisionerdaemons.go
@@ -4447,6 +4553,11 @@ export interface OrganizationMemberWithUserData extends OrganizationMember {
 	readonly name?: string;
 	readonly avatar_url?: string;
 	readonly email: string;
+	readonly status: UserStatus;
+	readonly login_type: LoginType;
+	readonly last_seen_at?: string;
+	readonly user_created_at: string;
+	readonly user_updated_at: string;
 	readonly global_roles: readonly SlimRole[];
 }
 
@@ -6811,6 +6922,19 @@ export interface UpdateChatUsageLimitOverrideRequest {
 	readonly spend_limit_micros: number; // Must be greater than 0.
 }
 
+// From codersdk/chats.go
+/**
+ * UpdateChatWorkspaceTTLRequest is the request to update the chat
+ * workspace TTL setting.
+ */
+export interface UpdateChatWorkspaceTTLRequest {
+	/**
+	 * WorkspaceTTLMillis is the workspace TTL in milliseconds.
+	 * Zero means disabled — the template's own autostop setting applies.
+	 */
+	readonly workspace_ttl_ms: number;
+}
+
 // From codersdk/updatecheck.go
 /**
  * UpdateCheckResponse contains information on the latest release of Coder.
@@ -6844,6 +6968,32 @@ export interface UpdateInboxNotificationReadStatusRequest {
 export interface UpdateInboxNotificationReadStatusResponse {
 	readonly notification: InboxNotification;
 	readonly unread_count: number;
+}
+
+// From codersdk/mcp.go
+/**
+ * UpdateMCPServerConfigRequest is the request to update an MCP server config.
+ */
+export interface UpdateMCPServerConfigRequest {
+	readonly display_name?: string;
+	readonly slug?: string;
+	readonly description?: string;
+	readonly icon_url?: string;
+	readonly transport?: string;
+	readonly url?: string;
+	readonly auth_type?: string;
+	readonly oauth2_client_id?: string;
+	readonly oauth2_client_secret?: string;
+	readonly oauth2_auth_url?: string;
+	readonly oauth2_token_url?: string;
+	readonly oauth2_scopes?: string;
+	readonly api_key_header?: string;
+	readonly api_key_value?: string;
+	readonly custom_headers?: Record<string, string>;
+	readonly tool_allow_list?: string[];
+	readonly tool_deny_list?: string[];
+	readonly availability?: string;
+	readonly enabled?: boolean;
 }
 
 // From codersdk/notifications.go
