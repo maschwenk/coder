@@ -502,6 +502,21 @@ func LicensesEntitlements(
 					fmt.Sprintf(
 						"Your deployment has %d active AI governance seats but the license with the limit %d is expired.",
 						actual, *feature.Limit))
+				// Also emit the over-limit warning when usage exceeds the limit,
+				// so admins see both the expiry and overage details.
+				if *feature.Limit > 0 && actual > *feature.Limit {
+					overPct := ((actual - *feature.Limit) * 100) / *feature.Limit
+					if overPct < 1 {
+						overPct = 1
+					}
+					entitlements.Warnings = append(entitlements.Warnings, fmt.Sprintf(
+						codersdk.LicenseAIGovernanceOverLimitWarningText,
+						actual,
+						*feature.Limit,
+						overPct,
+					))
+				}
+
 			case feature.Limit != nil && *feature.Limit > 0 &&
 				actual*100 >= (*feature.Limit)*90 && actual < *feature.Limit:
 				entitlements.Warnings = append(entitlements.Warnings,

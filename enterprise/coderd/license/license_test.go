@@ -1017,6 +1017,69 @@ func TestEntitlements(t *testing.T) {
 				}
 			})
 		}
+
+		t.Run("GracePeriodOverLimit", func(t *testing.T) {
+			t.Parallel()
+
+			const (
+				limit           int64 = 100
+				activeSeatCount int64 = 127
+			)
+
+			ctrl := gomock.NewController(t)
+			mDB := dbmock.NewMockStore(ctrl)
+
+			licenseOpts := &coderdenttest.LicenseOptions{
+				NotBefore: dbtime.Now().Add(-2 * time.Hour).Truncate(time.Second),
+				GraceAt:   dbtime.Now().Add(-time.Hour).Truncate(time.Second),
+				ExpiresAt: dbtime.Now().Add(24 * time.Hour).Truncate(time.Second),
+				Addons:    []codersdk.Addon{codersdk.AddonAIGovernance},
+				Features: license.Features{
+					codersdk.FeatureAIGovernanceUserLimit: limit,
+				},
+			}
+
+			lic := database.License{
+				ID:  1,
+				JWT: coderdenttest.GenerateLicense(t, *licenseOpts),
+				Exp: licenseOpts.ExpiresAt,
+			}
+
+			mDB.EXPECT().
+				GetUnexpiredLicenses(gomock.Any()).
+				Return([]database.License{lic}, nil)
+			mDB.EXPECT().
+				GetActiveUserCount(gomock.Any(), false).
+				Return(int64(1), nil)
+			mDB.EXPECT().
+				GetActiveAISeatCount(gomock.Any()).
+				Return(activeSeatCount, nil)
+			mDB.EXPECT().
+				GetTemplatesWithFilter(gomock.Any(), gomock.Any()).
+				Return([]database.Template{}, nil)
+
+			enablements := map[codersdk.FeatureName]bool{
+				codersdk.FeatureAIGovernanceUserLimit: true,
+			}
+
+			entitlements, err := license.Entitlements(context.Background(), mDB, 1, 0, coderdenttest.Keys, enablements)
+			require.NoError(t, err)
+			require.True(t, entitlements.HasLicense)
+
+			feature, ok := entitlements.Features[codersdk.FeatureAIGovernanceUserLimit]
+			require.True(t, ok)
+			require.Equal(t, codersdk.EntitlementGracePeriod, feature.Entitlement)
+
+			require.Contains(t, entitlements.Warnings,
+				fmt.Sprintf(
+					"Your deployment has %d active AI governance seats but the license with the limit %d is expired.",
+					activeSeatCount, limit,
+				),
+			)
+			require.Contains(t, entitlements.Warnings,
+				fmt.Sprintf(codersdk.LicenseAIGovernanceOverLimitWarningText, activeSeatCount, limit, 27),
+			)
+		})
 	})
 }
 
