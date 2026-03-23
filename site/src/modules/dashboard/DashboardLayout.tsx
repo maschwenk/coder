@@ -25,9 +25,10 @@ const AIGovernanceSeatBanner: FC = () => {
 		return null;
 	}
 
-	const { actual, limit } = aiGovernanceUserLimitFeature;
+	const { actual, entitlement, limit } = aiGovernanceUserLimitFeature;
 
 	if (
+		entitlement !== "entitled" ||
 		actual === undefined ||
 		limit === undefined ||
 		limit <= 0 ||

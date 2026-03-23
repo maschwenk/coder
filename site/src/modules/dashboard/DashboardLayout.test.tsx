@@ -15,10 +15,12 @@ import { DashboardLayout } from "./DashboardLayout";
 
 const renderDashboardLayout = async ({
 	actual,
+	entitlement = "entitled",
 	limit,
 	permissions = MockPermissions,
 }: {
 	actual?: number;
+	entitlement?: "entitled" | "grace_period" | "not_entitled";
 	limit?: number;
 	permissions?: typeof MockPermissions;
 }) => {
@@ -31,7 +33,7 @@ const renderDashboardLayout = async ({
 				features: {
 					...MockEntitlements.features,
 					ai_governance_user_limit: {
-						entitlement: "entitled",
+						entitlement,
 						enabled: true,
 						...(actual !== undefined ? { actual } : {}),
 						...(limit !== undefined ? { limit } : {}),
@@ -95,6 +97,30 @@ test("shows the AI Governance over-limit banner for admin users", async () => {
 			/110 \/ 100 AI Governance user seats \(10% over the limit\)/,
 		),
 	).toBeInTheDocument();
+});
+
+test("hides the AI Governance over-limit banner when entitlement is grace_period", async () => {
+	await renderDashboardLayout({
+		actual: 110,
+		entitlement: "grace_period",
+		limit: 100,
+	});
+
+	expect(
+		screen.queryByText(/AI Governance user seats/),
+	).not.toBeInTheDocument();
+});
+
+test("hides the AI Governance over-limit banner when entitlement is not_entitled", async () => {
+	await renderDashboardLayout({
+		actual: 110,
+		entitlement: "not_entitled",
+		limit: 100,
+	});
+
+	expect(
+		screen.queryByText(/AI Governance user seats/),
+	).not.toBeInTheDocument();
 });
 
 test("hides the AI Governance over-limit banner when seat usage is at the limit", async () => {
