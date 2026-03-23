@@ -14,6 +14,7 @@ import {
 import {
 	selectChatStatus,
 	selectHasStreamState,
+	selectIsAwaitingFirstStreamChunk,
 	selectMessagesByID,
 	selectOrderedMessageIDs,
 	selectQueuedMessages,
@@ -26,12 +27,12 @@ import {
 } from "./AgentDetail/ChatContext";
 import { ConversationTimeline } from "./AgentDetail/ConversationTimeline";
 import { getLatestContextUsage } from "./AgentDetail/chatHelpers";
+import { deriveLiveStatus } from "./AgentDetail/liveStatusModel";
 import {
 	buildSubagentTitles,
 	parseMessagesWithMergedTools,
 } from "./AgentDetail/messageParsing";
 import { buildStreamTools } from "./AgentDetail/streamState";
-import type { ParsedMessageEntry } from "./AgentDetail/types";
 
 type ChatStoreHandle = ReturnType<typeof useChatStore>["store"];
 
@@ -40,8 +41,10 @@ const isChatMessage = (
 ): message is TypesGen.ChatMessage => Boolean(message);
 
 interface AgentDetailTimelineProps {
+	chatID?: string;
 	store: ChatStoreHandle;
-	persistedErrorReason: ChatDetailError | undefined;
+	persistedError: ChatDetailError | undefined;
+	onOpenAnalytics?: () => void;
 	onEditUserMessage?: (
 		messageId: number,
 		text: string,
@@ -52,12 +55,11 @@ interface AgentDetailTimelineProps {
 	urlTransform?: UrlTransform;
 }
 
-// Reads only message-related store state (stable during streaming).
-// Computes parsedMessages once and passes them to ConversationTimeline
-// via a memo boundary so that streaming ticks don't re-parse history.
-const MessageListProvider: FC<AgentDetailTimelineProps> = ({
+export const AgentDetailTimeline: FC<AgentDetailTimelineProps> = ({
+	chatID,
 	store,
-	persistedErrorReason,
+	persistedError,
+	onOpenAnalytics,
 	onEditUserMessage,
 	editingMessageId,
 	savingMessageId,
@@ -65,114 +67,49 @@ const MessageListProvider: FC<AgentDetailTimelineProps> = ({
 }) => {
 	const messagesByID = useChatSelector(store, selectMessagesByID);
 	const orderedMessageIDs = useChatSelector(store, selectOrderedMessageIDs);
-	const chatStatus = useChatSelector(store, selectChatStatus);
+	const streamState = useChatSelector(store, selectStreamState);
 	const streamError = useChatSelector(store, selectStreamError);
+	const retryState = useChatSelector(store, selectRetryState);
+	const isAwaitingFirstStreamChunk = useChatSelector(
+		store,
+		selectIsAwaitingFirstStreamChunk,
+	);
 	const subagentStatusOverrides = useChatSelector(
 		store,
 		selectSubagentStatusOverrides,
 	);
-	const retryState = useChatSelector(store, selectRetryState);
 
 	const messages = orderedMessageIDs
 		.map((messageID) => messagesByID.get(messageID))
 		.filter(isChatMessage);
+	const streamTools = buildStreamTools(streamState);
+	const liveStatus = deriveLiveStatus({
+		streamState,
+		retryState,
+		streamError,
+		persistedError: persistedError ?? null,
+		isAwaitingFirstStreamChunk,
+	});
 	const parsedMessages = parseMessagesWithMergedTools(messages);
 	const subagentTitles = buildSubagentTitles(parsedMessages);
-	const detailError: ChatDetailError | undefined =
-		(persistedErrorReason?.kind === "usage-limit" || chatStatus === "error"
-			? persistedErrorReason
-			: undefined) ??
-		(streamError
-			? { kind: "generic" as const, message: streamError }
-			: undefined);
-	const latestMessage = messages[messages.length - 1];
-	const latestMessageNeedsAssistantResponse =
-		!latestMessage || latestMessage.role !== "assistant";
-
-	return (
-		<StreamingBridge
-			store={store}
-			isEmpty={messages.length === 0}
-			parsedMessages={parsedMessages}
-			subagentTitles={subagentTitles}
-			subagentStatusOverrides={subagentStatusOverrides}
-			retryState={retryState}
-			detailError={detailError}
-			latestMessageNeedsAssistantResponse={latestMessageNeedsAssistantResponse}
-			chatStatus={chatStatus}
-			onEditUserMessage={onEditUserMessage}
-			editingMessageId={editingMessageId}
-			savingMessageId={savingMessageId}
-			urlTransform={urlTransform}
-		/>
-	);
-};
-
-// Reads stream-specific store state (changes every token). Isolated
-// so that streamState changes don't invalidate parsedMessages above.
-const StreamingBridge: FC<{
-	store: ChatStoreHandle;
-	isEmpty: boolean;
-	parsedMessages: ParsedMessageEntry[];
-	subagentTitles: Map<string, string>;
-	subagentStatusOverrides: Map<string, TypesGen.ChatStatus>;
-	retryState: { attempt: number; error: string } | null;
-	detailError: ChatDetailError | undefined;
-	latestMessageNeedsAssistantResponse: boolean;
-	chatStatus: TypesGen.ChatStatus | null;
-	onEditUserMessage?: (
-		messageId: number,
-		text: string,
-		fileBlocks?: readonly TypesGen.ChatMessagePart[],
-	) => void;
-	editingMessageId?: number | null;
-	savingMessageId?: number | null;
-	urlTransform?: UrlTransform;
-}> = ({
-	store,
-	isEmpty,
-	parsedMessages,
-	subagentTitles,
-	subagentStatusOverrides,
-	retryState,
-	detailError,
-	latestMessageNeedsAssistantResponse,
-	chatStatus,
-	onEditUserMessage,
-	editingMessageId,
-	savingMessageId,
-	urlTransform,
-}) => {
-	const streamState = useChatSelector(store, selectStreamState);
-	const streamTools = buildStreamTools(streamState);
-	const isAwaitingFirstStreamChunk =
-		!streamState &&
-		(chatStatus === "running" || chatStatus === "pending") &&
-		latestMessageNeedsAssistantResponse;
-	const hasStreamOutput = Boolean(streamState) || isAwaitingFirstStreamChunk;
 
 	return (
 		<ConversationTimeline
-			isEmpty={isEmpty}
+			isEmpty={messages.length === 0}
 			parsedMessages={parsedMessages}
-			hasStreamOutput={hasStreamOutput}
 			streamState={streamState}
 			streamTools={streamTools}
+			liveStatus={liveStatus}
+			startingResetKey={chatID}
 			subagentTitles={subagentTitles}
 			subagentStatusOverrides={subagentStatusOverrides}
-			retryState={retryState}
-			isAwaitingFirstStreamChunk={isAwaitingFirstStreamChunk}
-			detailError={detailError}
+			onOpenAnalytics={onOpenAnalytics}
 			onEditUserMessage={onEditUserMessage}
 			editingMessageId={editingMessageId}
 			savingMessageId={savingMessageId}
 			urlTransform={urlTransform}
 		/>
 	);
-};
-
-export const AgentDetailTimeline: FC<AgentDetailTimelineProps> = (props) => {
-	return <MessageListProvider {...props} />;
 };
 
 interface AgentDetailInputProps {

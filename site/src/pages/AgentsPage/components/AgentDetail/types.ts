@@ -57,6 +57,15 @@ export type ParsedMessageEntry = {
 	parsed: ParsedMessageContent;
 };
 
+export type RetryState = {
+	attempt: number;
+	error: string;
+	kind: string;
+	provider?: string;
+	delayMs?: number;
+	retryingAt?: string;
+};
+
 type StreamToolCall = {
 	id: string;
 	name: string;

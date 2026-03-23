@@ -27,12 +27,12 @@ import {
 	useRef,
 	useState,
 } from "react";
-import { Link } from "react-router";
 import type { UrlTransform } from "streamdown";
 import { cn } from "utils/cn";
-import type { ChatDetailError } from "../../utils/usageLimitMessage";
 import { ImageThumbnail } from "../AgentChatInput";
 import { ImageLightbox } from "../ImageLightbox";
+import { ChatStatusCallout } from "./ChatStatusCallout";
+import type { LiveStatusModel } from "./liveStatusModel";
 import { useSmoothStreamingText } from "./SmoothText";
 import type {
 	MergedTool,
@@ -498,72 +498,77 @@ export const StreamingOutput: FC<{
 	streamTools: readonly MergedTool[];
 	subagentTitles?: Map<string, string>;
 	subagentStatusOverrides?: Map<string, TypesGen.ChatStatus>;
-	showInitialPlaceholder?: boolean;
-	retryState?: { attempt: number; error: string } | null;
+	liveStatus: LiveStatusModel;
+	startingResetKey?: string;
 	urlTransform?: UrlTransform;
 }> = ({
 	streamState,
 	streamTools,
 	subagentTitles,
 	subagentStatusOverrides,
-	showInitialPlaceholder = false,
-	retryState,
+	liveStatus,
+	startingResetKey,
 	urlTransform,
 }) => {
+	if (liveStatus.phase === "idle") {
+		return null;
+	}
+
+	const isStreaming = liveStatus.phase === "streaming";
+	const shouldShowBlocks =
+		liveStatus.phase === "streaming" || liveStatus.hasAccumulatedOutput;
+	const shouldShowStatusCallout =
+		liveStatus.phase === "starting" || liveStatus.phase === "retrying";
+	if (!shouldShowBlocks && !shouldShowStatusCallout) {
+		return null;
+	}
+
 	const conversationItemProps = { role: "assistant" as const };
 	const toolByID = new Map(streamTools.map((tool) => [tool.id, tool]));
-	const blocks = streamState?.blocks ?? [];
+	const blocks = shouldShowBlocks ? (streamState?.blocks ?? []) : [];
 	const { elements: orderedBlocks, renderedToolIDs } = renderBlockList({
 		blocks,
 		toolByID,
 		keyPrefix: "stream",
-		isStreaming: true,
+		isStreaming,
 		subagentTitles,
 		subagentStatusOverrides,
 		urlTransform,
 	});
-	const remainingTools = streamTools.filter(
-		(tool) => !renderedToolIDs.has(tool.id),
-	);
+	const remainingTools = shouldShowBlocks
+		? streamTools.filter((tool) => !renderedToolIDs.has(tool.id))
+		: [];
 
 	return (
 		<ConversationItem {...conversationItemProps}>
 			<Message className="w-full">
 				<MessageContent className="whitespace-normal">
 					<div className="space-y-3">
-						{orderedBlocks}
-						{showInitialPlaceholder ||
-						(streamState &&
-							orderedBlocks.length === 0 &&
-							streamTools.length === 0) ? (
-							<div className="relative">
-								<Response aria-hidden className="invisible">
-									{`Thinking...${retryState ? ` attempt ${retryState.attempt}` : ""}`}
-								</Response>
-								<div className="pointer-events-none absolute inset-0 flex items-baseline gap-2">
-									<Shimmer as="div" className="text-[13px] leading-relaxed">
-										Thinking...
-									</Shimmer>
-									{retryState && (
-										<span className="text-[11px] text-content-secondary">
-											attempt {retryState.attempt}
-										</span>
-									)}
-								</div>
-							</div>
-						) : null}
-						{remainingTools.map((tool) => (
-							<Tool
-								key={tool.id}
-								name={tool.name}
-								args={tool.args}
-								result={tool.result}
-								status={tool.status}
-								isError={tool.isError}
-								subagentTitles={subagentTitles}
-								subagentStatusOverrides={subagentStatusOverrides}
+						{shouldShowBlocks && (
+							<>
+								{orderedBlocks}
+								{remainingTools.map((tool) => (
+									<Tool
+										key={tool.id}
+										name={tool.name}
+										args={tool.args}
+										result={tool.result}
+										status={tool.status}
+										isError={tool.isError}
+										subagentTitles={isStreaming ? subagentTitles : undefined}
+										subagentStatusOverrides={
+											isStreaming ? subagentStatusOverrides : undefined
+										}
+									/>
+								))}
+							</>
+						)}
+						{shouldShowStatusCallout && (
+							<ChatStatusCallout
+								status={liveStatus}
+								startingResetKey={startingResetKey}
 							/>
-						))}
+						)}
 					</div>
 				</MessageContent>
 			</Message>
@@ -836,17 +841,22 @@ const StickyUserMessage: FC<{
 	);
 };
 
+const shouldRenderStreamingSection = (liveStatus: LiveStatusModel): boolean =>
+	liveStatus.phase === "starting" ||
+	liveStatus.phase === "streaming" ||
+	liveStatus.phase === "retrying" ||
+	liveStatus.hasAccumulatedOutput;
+
 interface ConversationTimelineProps {
 	isEmpty: boolean;
 	parsedMessages: readonly ParsedMessageEntry[];
-	hasStreamOutput: boolean;
 	streamState: StreamState | null;
 	streamTools: readonly MergedTool[];
+	liveStatus: LiveStatusModel;
+	startingResetKey?: string;
 	subagentTitles: Map<string, string>;
 	subagentStatusOverrides: Map<string, TypesGen.ChatStatus>;
-	retryState?: { attempt: number; error: string } | null;
-	isAwaitingFirstStreamChunk: boolean;
-	detailError?: ChatDetailError | null;
+	onOpenAnalytics?: () => void;
 	onEditUserMessage?: (
 		messageId: number,
 		text: string,
@@ -860,22 +870,26 @@ interface ConversationTimelineProps {
 export const ConversationTimeline: FC<ConversationTimelineProps> = ({
 	isEmpty,
 	parsedMessages,
-	hasStreamOutput,
 	streamState,
 	streamTools,
+	liveStatus,
+	startingResetKey,
 	subagentTitles,
 	subagentStatusOverrides,
-	retryState,
-	isAwaitingFirstStreamChunk,
-	detailError,
+	onOpenAnalytics,
 	onEditUserMessage,
 	editingMessageId,
 	savingMessageId,
 	urlTransform,
 }) => {
+	const shouldRenderStreamSection = shouldRenderStreamingSection(liveStatus);
 	const shouldRenderStreamAfterMessages =
-		hasStreamOutput && parsedMessages.length > 0;
-	const isUsageLimitError = detailError?.kind === "usage-limit";
+		shouldRenderStreamSection && parsedMessages.length > 0;
+	const terminalStatus = liveStatus.phase === "failed" ? liveStatus : null;
+	const usageLimitStatus =
+		terminalStatus?.kind === "usage-limit" ? terminalStatus : null;
+	const showUsageAction =
+		onOpenAnalytics !== undefined && usageLimitStatus !== null;
 
 	// Build a set of message IDs that appear after the message
 	// currently being edited so they can be visually faded.
@@ -894,8 +908,8 @@ export const ConversationTimeline: FC<ConversationTimelineProps> = ({
 	}
 
 	return (
-		<div className="mx-auto w-full max-w-3xl space-y-3 py-6">
-			{isEmpty && !hasStreamOutput ? (
+		<div className="mx-auto w-full max-w-3xl py-6 flex flex-col gap-3">
+			{isEmpty && !shouldRenderStreamSection ? (
 				<div className="py-12 text-center text-content-secondary">
 					<p className="text-sm">Start a conversation with your agent.</p>
 				</div>
@@ -927,41 +941,43 @@ export const ConversationTimeline: FC<ConversationTimelineProps> = ({
 						<StreamingOutput
 							streamState={streamState}
 							streamTools={streamTools}
+							liveStatus={liveStatus}
+							startingResetKey={startingResetKey}
 							subagentTitles={subagentTitles}
 							subagentStatusOverrides={subagentStatusOverrides}
-							showInitialPlaceholder={isAwaitingFirstStreamChunk}
-							retryState={retryState}
 							urlTransform={urlTransform}
 						/>
 					)}
-					{hasStreamOutput && parsedMessages.length === 0 && (
+					{shouldRenderStreamSection && parsedMessages.length === 0 && (
 						<StreamingOutput
 							streamState={streamState}
 							streamTools={streamTools}
+							liveStatus={liveStatus}
+							startingResetKey={startingResetKey}
 							subagentTitles={subagentTitles}
 							subagentStatusOverrides={subagentStatusOverrides}
-							showInitialPlaceholder={isAwaitingFirstStreamChunk}
-							retryState={retryState}
 							urlTransform={urlTransform}
 						/>
 					)}
 				</div>
 			)}
-			{detailError && (
+			{usageLimitStatus ? (
 				<Alert
-					severity={isUsageLimitError ? "info" : "error"}
+					severity="info"
 					className="py-2"
 					actions={
-						isUsageLimitError && (
-							<Button asChild variant="subtle" size="sm">
-								<Link to="/agents/analytics">View Usage</Link>
+						showUsageAction && (
+							<Button variant="subtle" size="sm" onClick={onOpenAnalytics}>
+								View Usage
 							</Button>
 						)
 					}
 				>
-					{detailError.message}
+					{usageLimitStatus.message}
 				</Alert>
-			)}
+			) : terminalStatus ? (
+				<ChatStatusCallout status={terminalStatus} />
+			) : null}
 		</div>
 	);
 };
