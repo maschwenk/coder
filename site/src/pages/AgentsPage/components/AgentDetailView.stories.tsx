@@ -92,12 +92,14 @@ const meta: Meta<typeof AgentDetailView> = {
 			routing: agentsRouting,
 		}),
 	},
+	render: (args) => (
+		<AgentDetailView {...args} scrollContainerRef={{ current: null }} />
+	),
 	args: {
 		agentId: AGENT_ID,
 		chatTitle: "Help me refactor",
 		parentChat: undefined,
-		chatErrorReasons: {},
-		chatRecord: buildChat(),
+		persistedError: undefined,
 		isArchived: false,
 		hasWorkspace: true,
 		store: createChatStore(),
@@ -134,7 +136,6 @@ const meta: Meta<typeof AgentDetailView> = {
 		handleArchiveAgentAction: fn(),
 		handleUnarchiveAgentAction: fn(),
 		handleArchiveAndDeleteWorkspaceAction: fn(),
-		scrollContainerRef: { current: null },
 	},
 };
 
@@ -152,7 +153,6 @@ export const Default: Story = {};
 export const Archived: Story = {
 	args: {
 		isArchived: true,
-		chatRecord: buildChat({ archived: true }),
 		isInputDisabled: true,
 	},
 };
@@ -167,11 +167,15 @@ export const WithParentChat: Story = {
 	},
 };
 
-/** Persisted error reason shown in the timeline area. */
+/** Persisted structured errors render through the shared timeline callout. */
 export const WithError: Story = {
 	args: {
-		chatErrorReasons: {
-			[AGENT_ID]: { kind: "generic", message: "Model rate limited" },
+		persistedError: {
+			kind: "overloaded",
+			message: "Anthropic is currently overloaded. Please try again shortly.",
+			provider: "anthropic",
+			retryable: true,
+			statusCode: 529,
 		},
 	},
 };
