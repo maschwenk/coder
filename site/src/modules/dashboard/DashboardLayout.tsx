@@ -1,6 +1,5 @@
 import Link from "@mui/material/Link";
 import Snackbar from "@mui/material/Snackbar";
-import { Alert } from "components/Alert/Alert";
 import { Button } from "components/Button/Button";
 import { Loader } from "components/Loader/Loader";
 import { useAuthenticated } from "hooks";
@@ -11,42 +10,10 @@ import { type FC, type HTMLAttributes, Suspense } from "react";
 import { Outlet } from "react-router";
 import { cn } from "utils/cn";
 import { docs } from "utils/docs";
+import { AIGovernanceSeatBanner } from "./AIGovernanceSeatBanner/AIGovernanceSeatBanner";
 import { DeploymentBanner } from "./DeploymentBanner/DeploymentBanner";
 import { Navbar } from "./Navbar/Navbar";
-import { useDashboard } from "./useDashboard";
 import { useUpdateCheck } from "./useUpdateCheck";
-
-const AIGovernanceSeatBanner: FC = () => {
-	const { entitlements } = useDashboard();
-	const aiGovernanceUserLimitFeature =
-		entitlements.features.ai_governance_user_limit;
-
-	if (!aiGovernanceUserLimitFeature) {
-		return null;
-	}
-
-	const { actual, entitlement, limit } = aiGovernanceUserLimitFeature;
-
-	if (
-		entitlement !== "entitled" ||
-		actual === undefined ||
-		limit === undefined ||
-		limit <= 0 ||
-		actual <= limit
-	) {
-		return null;
-	}
-
-	const overPercent = Math.floor(((actual - limit) / limit) * 100);
-
-	return (
-		<Alert severity="warning" prominent>
-			Your organization is using {actual} / {limit} AI Governance user seats (
-			{overPercent}% over the limit). Contact{" "}
-			<Link href="mailto:sales@coder.com">sales@coder.com</Link>
-		</Alert>
-	);
-};
 
 export const DashboardLayout: FC = () => {
 	const { permissions } = useAuthenticated();
