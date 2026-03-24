@@ -85,17 +85,18 @@ test("shows the AI Governance over-limit banner for non-admin users", async () =
 	);
 });
 
-test("hides the AI Governance seat banner for admin users (admins see warnings via LicenseBanner)", async () => {
+test("shows the AI Governance over-limit banner for admin users", async () => {
 	await renderDashboardLayout({
 		actual: 110,
 		limit: 100,
 		permissions: MockPermissions,
 	});
 
-	// Admins see AI governance warnings through LicenseBanner, not AIGovernanceSeatBanner.
 	expect(
-		screen.queryByText(/AI Governance user seats/),
-	).not.toBeInTheDocument();
+		screen.getByText(
+			/110 \/ 100 AI Governance user seats \(10% over the limit\)/,
+		),
+	).toBeInTheDocument();
 });
 
 test("shows the AI Governance over-limit banner when entitlement is grace_period", async () => {

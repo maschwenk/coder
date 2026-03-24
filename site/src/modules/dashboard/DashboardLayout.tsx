@@ -22,13 +22,8 @@ export const DashboardLayout: FC = () => {
 
 	return (
 		<>
-			{/* LicenseBanner shows admin-only entitlement warnings, including
-			    the 90% AI governance warning. AIGovernanceSeatBanner shows
-			    the over-limit warning to everyone else. Both are gated on
-			    viewDeploymentConfig to match the existing permission model
-			    for license diagnostics. */}
 			{canViewDeployment && <LicenseBanner />}
-			{!canViewDeployment && <AIGovernanceSeatBanner />}
+			<AIGovernanceSeatBanner />
 			<AnnouncementBanners />
 
 			<div className="flex flex-col min-h-screen justify-between">
