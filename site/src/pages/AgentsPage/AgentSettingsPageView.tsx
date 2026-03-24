@@ -56,7 +56,7 @@ import { humanDuration } from "utils/time";
 import {
 	DateRangePicker,
 	type DateRangeValue,
-} from "components/DateRangePicker/DateRangePicker";
+} from "./components/DateRangePicker/DateRangePicker";
 import { ChatCostSummaryView } from "./components/ChatCostSummaryView";
 import { ChatModelAdminPanel } from "./components/ChatModelAdminPanel/ChatModelAdminPanel";
 import { InsightsContent } from "./components/InsightsContent";
