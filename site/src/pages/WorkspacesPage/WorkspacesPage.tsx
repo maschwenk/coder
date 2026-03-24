@@ -1,5 +1,5 @@
 import { getErrorDetail, getErrorMessage } from "api/errors";
-import { workspaceChatIds } from "api/queries/chats";
+import { chatsByWorkspace } from "api/queries/chats";
 import { workspacePermissionsByOrganization } from "api/queries/organizations";
 import { templates, templateVersionRoot } from "api/queries/templates";
 import { workspaces } from "api/queries/workspaces";
@@ -135,7 +135,7 @@ const WorkspacesPage: FC = () => {
 		[data?.workspaces],
 	);
 	const chatsByWorkspaceQuery = useQuery({
-		...workspaceChatIds(workspaceIds),
+		...chatsByWorkspace(workspaceIds),
 		enabled: agentsEnabled && workspaceIds.length > 0,
 	});
 
