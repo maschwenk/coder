@@ -207,6 +207,7 @@ export const RemoteDiffPanel: FC<RemoteDiffPanelProps> = ({
 				chatInputRef={chatInputRef}
 				scrollToFile={scrollTarget}
 				onScrollToFileComplete={handleScrollComplete}
+				storageKey={`remote-${chatId}`}
 			/>
 		</div>
 	);

@@ -23,6 +23,7 @@ import {
 	type ReactNode,
 	useCallback,
 	useEffect,
+	useMemo,
 	useRef,
 	useState,
 } from "react";
@@ -92,6 +93,8 @@ interface DiffViewerProps {
 	scrollToFile?: string | null;
 	/** Called after scrollToFile has been processed. */
 	onScrollToFileComplete?: () => void;
+	/** Optional key for persisting collapsed file state to localStorage. */
+	storageKey?: string;
 }
 
 // -------------------------------------------------------------------
@@ -117,6 +120,15 @@ const STICKY_HEADER_CSS = [
 	"  background-color: hsl(var(--surface-secondary)) !important;",
 	"  padding-block: 0 !important;",
 	"}",
+
+	// Ensure the header-prefix slot (collapse chevron) renders
+	// before the CSS-generated change-type letter (A/D/M/R) so
+	// the order matches in both collapsed and expanded states.
+	"[data-header-content] > slot[name='header-prefix'] {",
+	"  order: -1;",
+	"  display: flex;",
+	"  align-items: center;",
+	"}",
 ].join(" ");
 
 export type DiffStyle = "unified" | "split";
@@ -135,6 +147,38 @@ export function loadDiffStyle(): DiffStyle {
 
 export function saveDiffStyle(style: DiffStyle): void {
 	localStorage.setItem(DIFF_STYLE_KEY, style);
+}
+
+const COLLAPSED_FILES_KEY_PREFIX = "agents.collapsed-diffs";
+
+function loadCollapsedFiles(storageKey: string): Set<string> {
+	try {
+		const raw = localStorage.getItem(
+			`${COLLAPSED_FILES_KEY_PREFIX}.${storageKey}`,
+		);
+		if (raw) {
+			const parsed: unknown = JSON.parse(raw);
+			if (Array.isArray(parsed)) {
+				return new Set(
+					parsed.filter((v): v is string => typeof v === "string"),
+				);
+			}
+		}
+	} catch {
+		// Corrupted data — start fresh.
+	}
+	return new Set();
+}
+
+// NOTE: Each storageKey gets its own localStorage entry and old
+// entries are never pruned. For `remote-${chatId}` this grows as
+// new chats are created. A future improvement could add LRU
+// eviction or cap the number of stored keys.
+function saveCollapsedFiles(storageKey: string, files: Set<string>): void {
+	localStorage.setItem(
+		`${COLLAPSED_FILES_KEY_PREFIX}.${storageKey}`,
+		JSON.stringify([...files]),
+	);
 }
 
 /** Width of the file tree sidebar in pixels. */
@@ -418,6 +462,33 @@ const DiffScrollContainer: FC<{
 };
 
 // -------------------------------------------------------------------
+// Collapse toggle rendered in each file header via renderHeaderPrefix
+// -------------------------------------------------------------------
+
+const CollapseChevron: FC<{
+	collapsed: boolean;
+	onToggle: () => void;
+}> = ({ collapsed, onToggle }) => (
+	<button
+		type="button"
+		onClick={(e) => {
+			e.stopPropagation();
+			onToggle();
+		}}
+		className="flex items-center border-none bg-transparent cursor-pointer p-0 text-content-secondary hover:text-content-primary outline-none"
+		aria-label={collapsed ? "Expand file" : "Collapse file"}
+		data-testid="collapse-file-toggle"
+	>
+		<ChevronRightIcon
+			className={cn(
+				"size-3.5 shrink-0 transition-transform",
+				!collapsed && "rotate-90",
+			)}
+		/>
+	</button>
+);
+
+// -------------------------------------------------------------------
 // Lazy file diff wrapper
 // -------------------------------------------------------------------
 
@@ -433,6 +504,8 @@ const DiffScrollContainer: FC<{
 const LazyFileDiff = memo<{
 	fileDiff: FileDiffMetadata;
 	options: ComponentProps<typeof FileDiff>["options"];
+	collapsed?: boolean;
+	onToggleCollapsed?: () => void;
 	lineAnnotations?: DiffLineAnnotation<string>[];
 	renderAnnotation?: (annotation: DiffLineAnnotation<string>) => ReactNode;
 	selectedLines?: SelectedLineRange | null;
@@ -440,6 +513,8 @@ const LazyFileDiff = memo<{
 	({
 		fileDiff,
 		options,
+		collapsed,
+		onToggleCollapsed,
 		lineAnnotations,
 		renderAnnotation: renderAnnotationProp,
 		selectedLines,
@@ -468,6 +543,24 @@ const LazyFileDiff = memo<{
 			return () => observer.disconnect();
 		}, [visible]);
 
+		const mergedOptions = useMemo(
+			() => (collapsed ? { ...options, collapsed: true } : options),
+			[options, collapsed],
+		);
+
+		const headerPrefix = useMemo(
+			() =>
+				onToggleCollapsed
+					? () => (
+							<CollapseChevron
+								collapsed={!!collapsed}
+								onToggle={onToggleCollapsed}
+							/>
+						)
+					: undefined,
+			[collapsed, onToggleCollapsed],
+		);
+
 		if (!visible) {
 			return (
 				<div
@@ -486,11 +579,12 @@ const LazyFileDiff = memo<{
 		return (
 			<FileDiff
 				fileDiff={fileDiff}
-				options={options}
+				options={mergedOptions}
 				metrics={VIRTUALIZER_METRICS}
 				style={DIFFS_FONT_STYLE}
 				lineAnnotations={lineAnnotations}
 				renderAnnotation={renderAnnotationProp}
+				renderHeaderPrefix={headerPrefix}
 				selectedLines={selectedLines}
 			/>
 		);
@@ -515,8 +609,34 @@ export const DiffViewer: FC<DiffViewerProps> = ({
 	renderAnnotation,
 	scrollToFile,
 	onScrollToFileComplete,
+	storageKey,
 }) => {
 	const theme = useTheme();
+
+	// ---------------------------------------------------------------
+	// Collapsed file state
+	// ---------------------------------------------------------------
+	const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(() =>
+		storageKey ? loadCollapsedFiles(storageKey) : new Set(),
+	);
+
+	const toggleFileCollapsed = useCallback(
+		(fileName: string) => {
+			setCollapsedFiles((prev) => {
+				const next = new Set(prev);
+				if (next.has(fileName)) {
+					next.delete(fileName);
+				} else {
+					next.add(fileName);
+				}
+				if (storageKey) {
+					saveCollapsedFiles(storageKey, next);
+				}
+				return next;
+			});
+		},
+		[storageKey],
+	);
 	const isDark = theme.palette.mode === "dark";
 
 	const diffOptions = (() => {
@@ -742,6 +862,10 @@ export const DiffViewer: FC<DiffViewerProps> = ({
 	}, [showTree, sortedFiles.length]);
 
 	const handleFileClick = (name: string) => {
+		// Auto-expand if collapsed so the user sees the diff.
+		if (collapsedFiles.has(name)) {
+			toggleFileCollapsed(name);
+		}
 		const el = fileRefs.current.get(name);
 		if (el) {
 			el.scrollIntoView({ block: "start" });
@@ -754,6 +878,10 @@ export const DiffViewer: FC<DiffViewerProps> = ({
 	// clicking a file reference chip in the chat input).
 	useEffect(() => {
 		if (scrollToFile) {
+			// Auto-expand if collapsed.
+			if (collapsedFiles.has(scrollToFile)) {
+				toggleFileCollapsed(scrollToFile);
+			}
 			const el = fileRefs.current.get(scrollToFile);
 			if (el) {
 				el.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -761,7 +889,12 @@ export const DiffViewer: FC<DiffViewerProps> = ({
 			}
 			onScrollToFileComplete?.();
 		}
-	}, [scrollToFile, onScrollToFileComplete]);
+	}, [
+		scrollToFile,
+		onScrollToFileComplete,
+		collapsedFiles,
+		toggleFileCollapsed,
+	]);
 
 	// ---------------------------------------------------------------
 	// Loading state
@@ -852,12 +985,14 @@ export const DiffViewer: FC<DiffViewerProps> = ({
 									<LazyFileDiff
 										fileDiff={fileDiff}
 										options={perFileOptions?.get(fileDiff.name) ?? fileOptions}
+										collapsed={collapsedFiles.has(fileDiff.name)}
+										onToggleCollapsed={() => toggleFileCollapsed(fileDiff.name)}
 										lineAnnotations={perFileAnnotations?.get(fileDiff.name)}
 										renderAnnotation={renderAnnotation}
 										selectedLines={
 											perFileSelectedLines?.get(fileDiff.name) ?? null
 										}
-									/>
+									/>{" "}
 									{isLast && (
 										<div className="flex items-center justify-center py-4 text-xs text-content-secondary">
 											{`${sortedFiles.length} ${sortedFiles.length === 1 ? "file" : "files"} changed`}
