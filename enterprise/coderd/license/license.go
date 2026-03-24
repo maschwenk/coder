@@ -515,6 +515,11 @@ func LicensesEntitlements(
 						*feature.Limit,
 						overPct,
 					))
+					// Emit the 90% capacity warning when usage is near, but below
+					// the limit.
+				} else if *feature.Limit > 0 && actual*100 >= (*feature.Limit)*90 && actual < *feature.Limit {
+					entitlements.Warnings = append(entitlements.Warnings,
+						codersdk.LicenseAIGovernance90PercentWarningText)
 				}
 
 			case feature.Limit != nil && *feature.Limit > 0 &&
