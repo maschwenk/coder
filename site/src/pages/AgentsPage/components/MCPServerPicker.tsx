@@ -215,7 +215,7 @@ export const MCPServerPicker: FC<MCPServerPickerProps> = ({
 					aria-label="MCP Servers"
 					className="group flex h-8 cursor-pointer items-center gap-1.5 border-none bg-transparent px-1 text-xs text-content-secondary shadow-none transition-colors hover:text-content-primary disabled:cursor-not-allowed disabled:opacity-50"
 				>
-					<span className="hidden sm:inline">MCP</span>
+					<span>MCP</span>
 					{activeServers.length > 0 && (
 						<TriggerIconStack servers={activeServers} />
 					)}

@@ -9,6 +9,11 @@ import {
 	ChatMessageInput,
 	type ChatMessageInputRef,
 } from "components/ChatMessageInput/ChatMessageInput";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "components/Popover/Popover";
 import { Spinner } from "components/Spinner/Spinner";
 import {
 	Tooltip,
@@ -24,6 +29,7 @@ import {
 	ImageIcon,
 	MicIcon,
 	PencilIcon,
+	PlusIcon,
 	Square,
 	XIcon,
 } from "lucide-react";
@@ -476,6 +482,7 @@ export const AgentChatInput: FC<AgentChatInputProps> = ({
 	const [previewTextFileName, setPreviewTextFileName] = useState<string | null>(
 		null,
 	);
+	const [plusMenuOpen, setPlusMenuOpen] = useState(false);
 
 	const [hasFileReferences, setHasFileReferences] = useState(false);
 
@@ -771,9 +778,67 @@ export const AgentChatInput: FC<AgentChatInputProps> = ({
 					disabled={isDisabled || isLoading}
 					autoFocus
 				/>
-
+				{/* Hidden file input for image attachment */}
+				{onAttach && (
+					<input
+						ref={fileInputRef}
+						type="file"
+						multiple
+						accept="image/*"
+						onChange={handleFileSelect}
+						className="hidden"
+					/>
+				)}
 				<div className="flex items-center justify-between gap-2 px-2.5 pb-1.5">
-					<div className="flex min-w-0 items-center gap-2">
+					<div className="flex min-w-0 items-center gap-1">
+						{/* Plus menu */}
+						<Popover open={plusMenuOpen} onOpenChange={setPlusMenuOpen}>
+							<PopoverTrigger asChild>
+								<Button
+									type="button"
+									variant="subtle"
+									size="icon"
+									className="size-7 shrink-0 rounded-full [&>svg]:!size-icon-sm [&>svg]:p-0"
+									disabled={isDisabled}
+									aria-label="More options"
+								>
+									<PlusIcon />
+								</Button>
+							</PopoverTrigger>
+							<PopoverContent
+								side="top"
+								align="start"
+								className="w-auto min-w-[200px] p-1"
+							>
+								{onAttach && (
+									<button
+										type="button"
+										onClick={() => {
+											setPlusMenuOpen(false);
+											fileInputRef.current?.click();
+										}}
+										className="group flex h-8 w-full cursor-pointer items-center gap-1.5 border-none bg-transparent px-1 text-xs text-content-secondary shadow-none transition-colors hover:text-content-primary"
+									>
+										<ImageIcon className="h-3.5 w-3.5 shrink-0" />
+										Attach image
+									</button>
+								)}
+								{leftActions}
+								{mcpServers &&
+									mcpServers.length > 0 &&
+									onMCPSelectionChange &&
+									onMCPAuthComplete && (
+										<MCPServerPicker
+											servers={mcpServers}
+											selectedServerIds={selectedMCPServerIds ?? []}
+											onSelectionChange={onMCPSelectionChange}
+											onAuthComplete={onMCPAuthComplete}
+											disabled={isDisabled}
+										/>
+									)}
+							</PopoverContent>
+						</Popover>
+
 						<ModelSelector
 							value={selectedModel}
 							onValueChange={onModelChange}
@@ -784,19 +849,6 @@ export const AgentChatInput: FC<AgentChatInputProps> = ({
 							dropdownSide="top"
 							dropdownAlign="center"
 						/>
-						{mcpServers &&
-							mcpServers.length > 0 &&
-							onMCPSelectionChange &&
-							onMCPAuthComplete && (
-								<MCPServerPicker
-									servers={mcpServers}
-									selectedServerIds={selectedMCPServerIds ?? []}
-									onSelectionChange={onMCPSelectionChange}
-									onAuthComplete={onMCPAuthComplete}
-									disabled={isDisabled}
-								/>
-							)}
-						{leftActions}
 						{inputStatusText && (
 							<span className="hidden text-xs text-content-secondary sm:inline">
 								{inputStatusText}
@@ -804,29 +856,6 @@ export const AgentChatInput: FC<AgentChatInputProps> = ({
 						)}
 					</div>
 					<div className="flex items-center gap-2">
-						{onAttach && (
-							<>
-								<input
-									ref={fileInputRef}
-									type="file"
-									multiple
-									accept="image/*"
-									onChange={handleFileSelect}
-									className="hidden"
-								/>
-								<Button
-									type="button"
-									variant="subtle"
-									size="icon"
-									className="size-7 shrink-0 rounded-full [&>svg]:!size-icon-sm [&>svg]:p-0"
-									onClick={() => fileInputRef.current?.click()}
-									disabled={isDisabled}
-									aria-label="Attach files"
-								>
-									<ImageIcon />
-								</Button>
-							</>
-						)}
 						{speech.isSupported && !isStreaming && (
 							<>
 								<Button
@@ -896,8 +925,7 @@ export const AgentChatInput: FC<AgentChatInputProps> = ({
 							</Button>
 						)}
 					</div>
-				</div>
-				{inputStatusText && (
+					</div>				{inputStatusText && (
 					<div className="px-2.5 pb-1 text-xs text-content-secondary sm:hidden">
 						{inputStatusText}
 					</div>

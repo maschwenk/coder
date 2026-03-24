@@ -299,10 +299,7 @@ export const AgentCreateForm: FC<AgentCreateFormProps> = ({
 	const selectedWorkspace = selectedWorkspaceId
 		? workspaceOptions.find((ws) => ws.id === selectedWorkspaceId)
 		: undefined;
-	const selectedWorkspaceLabel = selectedWorkspace
-		? `${selectedWorkspace.owner_name}/${selectedWorkspace.name}`
-		: undefined;
-
+	const selectedWorkspaceLabel = selectedWorkspace?.name;
 	const {
 		attachments,
 		textContents,
@@ -405,11 +402,11 @@ export const AgentCreateForm: FC<AgentCreateFormProps> = ({
 								<button
 									type="button"
 									disabled={isCreating || workspacesQuery.isLoading}
-									className="pointer-events-auto group flex h-8 items-center gap-1.5 rounded-md border-none bg-transparent px-1 text-xs text-content-secondary shadow-none ring-offset-background transition-colors hover:bg-transparent hover:text-content-primary focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-content-link cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+									className="pointer-events-auto group flex h-8 w-full items-center gap-1.5 rounded-md border-none bg-transparent px-1 text-xs text-content-secondary shadow-none ring-offset-background transition-colors hover:bg-transparent hover:text-content-primary focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-content-link cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
 								>
 									<MonitorIcon className="h-3.5 w-3.5 shrink-0 text-content-secondary transition-colors group-hover:text-content-primary" />
 									<span>{selectedWorkspaceLabel ?? "Workspace"}</span>
-									<ChevronDownIcon className="size-icon-sm text-content-secondary transition-colors group-hover:text-content-primary" />
+									<ChevronDownIcon className="ml-auto size-icon-sm text-content-secondary transition-colors group-hover:text-content-primary" />
 								</button>
 							</PopoverTrigger>
 							<PopoverContent side="top" align="start" className="w-72 p-0">
@@ -439,8 +436,7 @@ export const AgentCreateForm: FC<AgentCreateFormProps> = ({
 														setWorkspacePopoverOpen(false);
 													}}
 												>
-													{workspace.owner_name}/{workspace.name}
-													{selectedWorkspaceId === workspace.id && (
+														{workspace.name}													{selectedWorkspaceId === workspace.id && (
 														<Check className="ml-auto size-icon-sm shrink-0" />
 													)}
 												</CommandItem>

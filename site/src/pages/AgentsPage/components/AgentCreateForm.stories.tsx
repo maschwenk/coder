@@ -79,14 +79,17 @@ export const WithWorkspaces: Story = {
 	},
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
+		const body = within(canvasElement.ownerDocument.body);
+		// Open the "+" menu first, then click the workspace trigger inside it.
+		await userEvent.click(canvas.getByRole("button", { name: "More options" }));
 		await waitFor(() => {
-			const trigger = canvas.getByText("Workspace").closest("button")!;
+			const trigger = body.getByText("Workspace").closest("button")!;
 			expect(trigger).toBeEnabled();
 		});
-		await userEvent.click(canvas.getByText("Workspace").closest("button")!);
+		await userEvent.click(body.getByText("Workspace").closest("button")!);
 		// Wait for the portalled combobox dropdown to appear so Chromatic
 		// captures it.
-		await within(canvasElement.ownerDocument.body).findByRole("dialog");
+		await body.findByRole("dialog");
 	},
 };
 
@@ -100,13 +103,15 @@ export const SearchWorkspaces: Story = {
 	},
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
+		const body = within(canvasElement.ownerDocument.body);
+		// Open the "+" menu first, then click the workspace trigger inside it.
+		await userEvent.click(canvas.getByRole("button", { name: "More options" }));
 		await waitFor(() => {
-			const trigger = canvas.getByText("Workspace").closest("button")!;
+			const trigger = body.getByText("Workspace").closest("button")!;
 			expect(trigger).toBeEnabled();
 		});
-		await userEvent.click(canvas.getByText("Workspace").closest("button")!);
+		await userEvent.click(body.getByText("Workspace").closest("button")!);
 
-		const body = within(canvasElement.ownerDocument.body);
 		await body.findByRole("dialog");
 
 		// Type in the search input to filter workspaces.
@@ -119,7 +124,7 @@ export const SearchWorkspaces: Story = {
 			// "Auto-create Workspace" is filtered out, only
 			// "johndoe/backend-api" matches.
 			expect(options).toHaveLength(1);
-			expect(options[0]).toHaveTextContent("johndoe/backend-api");
+			expect(options[0]).toHaveTextContent("backend-api");
 		});
 	},
 };
@@ -134,13 +139,15 @@ export const SelectWorkspaceViaSearch: Story = {
 	},
 	play: async ({ canvasElement }) => {
 		const canvas = within(canvasElement);
+		const body = within(canvasElement.ownerDocument.body);
+		// Open the "+" menu first, then click the workspace trigger inside it.
+		await userEvent.click(canvas.getByRole("button", { name: "More options" }));
 		await waitFor(() => {
-			const trigger = canvas.getByText("Workspace").closest("button")!;
+			const trigger = body.getByText("Workspace").closest("button")!;
 			expect(trigger).toBeEnabled();
 		});
-		await userEvent.click(canvas.getByText("Workspace").closest("button")!);
+		await userEvent.click(body.getByText("Workspace").closest("button")!);
 
-		const body = within(canvasElement.ownerDocument.body);
 		await body.findByRole("dialog");
 
 		// Search for "janedoe" and select the result.
@@ -153,9 +160,10 @@ export const SelectWorkspaceViaSearch: Story = {
 
 		await userEvent.click(body.getByRole("option", { name: /janedoe/ }));
 
-		// The trigger should now show the selected workspace.
+		// Re-open the "+" menu to verify the selected workspace label.
+		await userEvent.click(canvas.getByRole("button", { name: "More options" }));
 		await waitFor(() => {
-			expect(canvas.getByText("janedoe/my-project")).toBeInTheDocument();
+			expect(body.getByText("my-project")).toBeInTheDocument();
 		});
 	},
 };
